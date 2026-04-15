@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>kiro-session — Smart Session Manager for Kiro CLI</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #e0e0e0; background: #0d1117; line-height: 1.6; overflow-x: hidden; }
+
+  /* Animations */
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @keyframes slideLeft { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes slideRight { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+  .reveal { opacity: 0; transition: all 0.6s ease; }
+  .reveal.visible { opacity: 1; }
+  .reveal.visible.up { animation: fadeUp 0.6s ease forwards; }
+  .reveal.visible.left { animation: slideLeft 0.6s ease forwards; }
+  .reveal.visible.right { animation: slideRight 0.6s ease forwards; }
+
+  /* Hero */
+  .hero { text-align: center; padding: 80px 20px 60px; background: linear-gradient(135deg, #0d1117 0%, #161b22 100%); position: relative; }
+  .hero::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, #30363d, transparent); }
+  .hero h1 { font-size: 3em; color: #58a6ff; margin-bottom: 12px; animation: fadeUp 0.8s ease; }
+  .hero h1 span { color: #f0883e; }
+  .hero p { font-size: 1.3em; color: #8b949e; max-width: 600px; margin: 0 auto; animation: fadeUp 1s ease; }
+  .hero .badge { display: inline-block; margin-top: 20px; padding: 6px 16px; border-radius: 20px; background: #21262d; border: 1px solid #30363d; color: #8b949e; font-size: 0.85em; animation: fadeUp 1.2s ease; }
+
+  .section { max-width: 900px; margin: 0 auto; padding: 60px 20px; }
+  .section h2 { font-size: 1.8em; color: #58a6ff; margin-bottom: 30px; text-align: center; }
+
+  /* Before/After comparison */
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 40px; }
+  .compare-card { border-radius: 12px; padding: 28px; transition: transform 0.3s ease, box-shadow 0.3s ease; }
+  .compare-card:hover { transform: translateY(-4px); box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
+  .compare-card.before { background: #1c1c1c; border: 1px solid #da3633; }
+  .compare-card.after { background: #0d2230; border: 1px solid #238636; }
+  .compare-card h3 { font-size: 1.1em; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .compare-card.before h3 { color: #f85149; }
+  .compare-card.after h3 { color: #3fb950; }
+  .compare-card ul { list-style: none; }
+  .compare-card ul li { padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 0.95em; opacity: 0; transition: opacity 0.4s ease; }
+  .compare-card ul li:last-child { border-bottom: none; }
+  .compare-card.before li::before { content: "✘ "; color: #f85149; }
+  .compare-card.after li::before { content: "✔ "; color: #3fb950; }
+  .compare-card.visible li { opacity: 1; }
+
+  /* Terminal mockup */
+  .terminal { background: #161b22; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; margin: 30px 0; font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 0.85em; }
+  .terminal-bar { background: #21262d; padding: 8px 16px; display: flex; gap: 6px; align-items: center; }
+  .terminal-bar .title { color: #484f58; font-size: 0.8em; margin-left: 12px; }
+  .terminal-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .terminal-dot.r { background: #f85149; }
+  .terminal-dot.y { background: #d29922; }
+  .terminal-dot.g { background: #3fb950; }
+  .terminal-body { padding: 16px 20px; line-height: 1.7; overflow-x: auto; min-height: 60px; }
+  .terminal-body .prompt { color: #3fb950; }
+  .terminal-body .cmd { color: #e0e0e0; }
+  .terminal-body .dim { color: #484f58; }
+  .terminal-body .blue { color: #58a6ff; }
+  .terminal-body .yellow { color: #d29922; }
+  .terminal-body .green { color: #3fb950; }
+  .terminal-body .orange { color: #f0883e; }
+  .terminal-body .cursor { display: inline-block; width: 8px; height: 16px; background: #3fb950; animation: blink 1s infinite; vertical-align: text-bottom; }
+  .typed-line { opacity: 0; transform: translateX(-10px); transition: all 0.15s ease; }
+  .typed-line.show { opacity: 1; transform: translateX(0); }
+
+  /* Features */
+  .features { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .feature { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 24px; transition: transform 0.3s ease, border-color 0.3s ease; }
+  .feature:hover { transform: translateY(-3px); border-color: #58a6ff; }
+  .feature .icon { font-size: 1.6em; margin-bottom: 10px; }
+  .feature h3 { color: #c9d1d9; font-size: 1.05em; margin-bottom: 8px; }
+  .feature p { color: #8b949e; font-size: 0.9em; }
+
+  /* Install */
+  .install { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 32px; text-align: center; }
+  .install h2 { margin-bottom: 16px; }
+  .install code { display: block; background: #0d1117; color: #3fb950; padding: 16px; border-radius: 8px; font-family: 'SF Mono', monospace; font-size: 0.95em; margin: 12px auto; max-width: 500px; text-align: left; white-space: pre; }
+  .install .note { color: #8b949e; font-size: 0.85em; margin-top: 12px; }
+
+  /* Flow */
+  .flow { display: flex; justify-content: center; align-items: center; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
+  .flow-step { background: #21262d; border: 1px solid #30363d; border-radius: 8px; padding: 10px 16px; font-size: 0.85em; color: #c9d1d9; transition: transform 0.3s ease, background 0.3s ease; }
+  .flow-step:hover { transform: scale(1.05); background: #30363d; }
+  .flow-arrow { color: #484f58; font-size: 1.2em; }
+
+  .footer { text-align: center; padding: 40px 20px; color: #484f58; font-size: 0.85em; }
+
+  @media (max-width: 700px) {
+    .compare, .features { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 2em; }
+    .flow { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>kiro-<span>session</span></h1>
+  <p>Smart session management for Kiro CLI. Find, search, split, and organize your AI conversations.</p>
+  <div class="badge">v0.3.0 · 19 KB · Zero Config</div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">The Problem vs The Solution</h2>
+  <div class="compare">
+    <div class="compare-card before reveal left">
+      <h3>😤 Before</h3>
+      <ul>
+        <li>Session list shows only IDs and one-line summaries</li>
+        <li>Can't search across session content</li>
+        <li>200-turn sessions mixing 5 different topics</li>
+        <li>No way to find "that Docker conversation from last week"</li>
+        <li>Stale sessions pile up with no cleanup</li>
+        <li>Resuming a specific session = scrolling through IDs</li>
+      </ul>
+    </div>
+    <div class="compare-card after reveal right">
+      <h3>🚀 After</h3>
+      <ul>
+        <li>Rich interactive browser with names, topics, and metadata</li>
+        <li>Full-text search across all conversation content</li>
+        <li>LLM splits long sessions into focused topic-based ones</li>
+        <li>Find any session by keyword, directory, or recency</li>
+        <li>Smart cleanup suggestions with safety guardrails</li>
+        <li>One-command resume with precise session targeting</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">See It In Action</h2>
+
+  <div class="terminal reveal up" data-typewriter="term1">
+    <div class="terminal-bar">
+      <div class="terminal-dot r"></div>
+      <div class="terminal-dot y"></div>
+      <div class="terminal-dot g"></div>
+      <span class="title">Interactive Session Browser</span>
+    </div>
+    <div class="terminal-body" id="term1">
+<div class="typed-line"><span class="prompt">$</span> <span class="cmd">kiro-session</span></div>
+<div class="typed-line"></div>
+<div class="typed-line"><span class="dim">Sessions (↑↓/jk navigate, Enter select, q quit)</span></div>
+<div class="typed-line"><span class="dim">⚡= LLM Summary Pending</span></div>
+<div class="typed-line"></div>
+<div class="typed-line"><span class="blue">→</span>   612381ac  <span class="orange">API Gateway Migration Plan</span>  (4d, 7 topics, docs)</div>
+<div class="typed-line">  ⚡ 5d32ae37  Debug production logs...  (2d, 53 turns, project-x)</div>
+<div class="typed-line">     c3ac5bb0  <span class="orange">Docker Compose Setup</span>  (25m, 3 children, infra)</div>
+<div class="typed-line">  ⚡ bcc7b244  Reply with exactly: OK  (3h, 1 turns, temp)</div>
+<div class="typed-line">  ⚡ 93fb0554  hi  (13h, 1 turns, temp)</div>
+    </div>
+  </div>
+
+  <div class="terminal reveal up" data-typewriter="term2">
+    <div class="terminal-bar">
+      <div class="terminal-dot r"></div>
+      <div class="terminal-dot y"></div>
+      <div class="terminal-dot g"></div>
+      <span class="title">Session Detail & Actions</span>
+    </div>
+    <div class="terminal-body" id="term2">
+<div class="typed-line"><span class="dim">============================================================</span></div>
+<div class="typed-line"><span class="dim">Session:</span> <span class="orange">API Gateway Migration Plan</span></div>
+<div class="typed-line"><span class="dim">ID:</span>      612381ac</div>
+<div class="typed-line"><span class="dim">Dir:</span>     /home/user/docs</div>
+<div class="typed-line"><span class="dim">Updated:</span> 4d ago</div>
+<div class="typed-line"><span class="dim">Turns:</span>   58 prompts</div>
+<div class="typed-line"></div>
+<div class="typed-line"><span class="dim">Topics (3):</span></div>
+<div class="typed-line">  1. REST API endpoint refactoring</div>
+<div class="typed-line">  2. Auth middleware integration</div>
+<div class="typed-line">  3. Load testing and optimization</div>
+<div class="typed-line"><span class="dim">============================================================</span></div>
+<div class="typed-line"></div>
+<div class="typed-line">  <span class="green">[r]</span> Resume  — continue this conversation in Kiro CLI</div>
+<div class="typed-line">  <span class="green">[s]</span> Split   — break into topic-based sessions</div>
+<div class="typed-line">  <span class="green">[v]</span> Save    — export to JSON file</div>
+<div class="typed-line">  <span class="green">[d]</span> Delete  — remove this session from DB</div>
+<div class="typed-line">  <span class="green">[b]</span> Back    <span class="green">[q]</span> Quit</div>
+<div class="typed-line"><span class="prompt">&gt;</span> <span class="cursor"></span></div>
+    </div>
+  </div>
+
+  <div class="terminal reveal up" data-typewriter="term3">
+    <div class="terminal-bar">
+      <div class="terminal-dot r"></div>
+      <div class="terminal-dot y"></div>
+      <div class="terminal-dot g"></div>
+      <span class="title">Full-Text Deep Search</span>
+    </div>
+    <div class="terminal-body" id="term3">
+<div class="typed-line"><span class="prompt">$</span> <span class="cmd">kiro-session list --search "migration" --deep</span></div>
+<div class="typed-line"></div>
+<div class="typed-line">   612381ac  <span class="orange">API Gateway Migration Plan</span>  (4d, 7 topics, docs)</div>
+<div class="typed-line">⚡ 5d32ae37  Debug production logs...  (2d, 53 turns, project-x)</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Key Features</h2>
+  <div class="features">
+    <div class="feature reveal up">
+      <div class="icon">🔍</div>
+      <h3>Smart Search</h3>
+      <p>Search by keyword, directory, or recency. Deep search scans full conversation content across all sessions.</p>
+    </div>
+    <div class="feature reveal up">
+      <div class="icon">🧠</div>
+      <h3>LLM-Powered Index</h3>
+      <p>Generates meaningful session names and topic summaries. Runs in background — zero effort, richer info.</p>
+    </div>
+    <div class="feature reveal up">
+      <div class="icon">✂️</div>
+      <h3>Semantic Topic Splitting</h3>
+      <p>LLM groups turns by meaning, not sequence. Review, adjust with natural language, and your preferences are learned.</p>
+    </div>
+    <div class="feature reveal up">
+      <div class="icon">⏪</div>
+      <h3>One-Command Resume</h3>
+      <p>Select any session and get a precise resume command. Works with both terminal and TUI mode.</p>
+    </div>
+    <div class="feature reveal up">
+      <div class="icon">🧹</div>
+      <h3>Safe Cleanup</h3>
+      <p>Smart suggestions for stale sessions. No auto-deletion — you always confirm. Split parents reclaimable after 30 days.</p>
+    </div>
+    <div class="feature reveal up">
+      <div class="icon">⚡</div>
+      <h3>Zero Config</h3>
+      <p>Works alongside native Kiro CLI. No API keys needed — uses kiro-cli's own LLM. Index self-heals on external changes.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">How It Works</h2>
+  <div class="flow reveal up">
+    <div class="flow-step">📦 Install (30s)</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">🔍 Browse sessions</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">🧠 LLM indexes in background</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">✂️ Split long sessions</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">🧹 Cleanup when ready</div>
+  </div>
+</div>
+
+<div class="section reveal up">
+  <div class="install">
+    <h2>Install in 30 Seconds</h2>
+    <code>tar xzf kiro-session-v0.3.0.tar.gz
+cd session-manager
+./install.sh</code>
+    <div class="note">Requires: Python 3.10+ · Kiro CLI · 19 KB download</div>
+  </div>
+</div>
+
+<div class="footer">kiro-session v0.3.0</div>
+
+<script>
+// Scroll reveal
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      // Stagger list items
+      const items = entry.target.querySelectorAll('li');
+      items.forEach((li, i) => {
+        setTimeout(() => li.style.opacity = '1', i * 120);
+      });
+      // Trigger typewriter
+      if (entry.target.dataset.typewriter) {
+        typewriter(entry.target.dataset.typewriter);
+      }
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.15 });
+
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+document.querySelectorAll('[data-typewriter]').forEach(el => observer.observe(el));
+
+// Typewriter effect for terminal lines
+function typewriter(termId) {
+  const lines = document.querySelectorAll(`#${termId} .typed-line`);
+  lines.forEach((line, i) => {
+    setTimeout(() => line.classList.add('show'), i * 80);
+  });
+}
+
+// Stagger feature cards
+const featureObserver = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const features = entry.target.querySelectorAll('.feature');
+      features.forEach((f, i) => {
+        setTimeout(() => {
+          f.classList.add('visible');
+          f.style.animation = `fadeUp 0.5s ease ${i * 0.1}s forwards`;
+        }, i * 100);
+      });
+      featureObserver.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.features').forEach(el => featureObserver.observe(el));
+</script>
+
+</body>
+</html>
