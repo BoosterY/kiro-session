@@ -4,319 +4,317 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>kiro-session — Smart Session Manager for Kiro CLI</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #e0e0e0; background: #0d1117; line-height: 1.6; overflow-x: hidden; }
-
-  /* Animations */
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-  @keyframes slideLeft { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
-  @keyframes slideRight { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
-  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-
-  .reveal { opacity: 0; transition: all 0.6s ease; }
-  .reveal.visible { opacity: 1; }
-  .reveal.visible.up { animation: fadeUp 0.6s ease forwards; }
-  .reveal.visible.left { animation: slideLeft 0.6s ease forwards; }
-  .reveal.visible.right { animation: slideRight 0.6s ease forwards; }
-
-  /* Hero */
-  .hero { text-align: center; padding: 80px 20px 60px; background: linear-gradient(135deg, #0d1117 0%, #161b22 100%); position: relative; }
-  .hero::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, #30363d, transparent); }
-  .hero h1 { font-size: 3em; color: #58a6ff; margin-bottom: 12px; animation: fadeUp 0.8s ease; }
-  .hero h1 span { color: #f0883e; }
-  .hero p { font-size: 1.3em; color: #8b949e; max-width: 600px; margin: 0 auto; animation: fadeUp 1s ease; }
-  .hero .badge { display: inline-block; margin-top: 20px; padding: 6px 16px; border-radius: 20px; background: #21262d; border: 1px solid #30363d; color: #8b949e; font-size: 0.85em; animation: fadeUp 1.2s ease; }
-
-  .section { max-width: 900px; margin: 0 auto; padding: 60px 20px; }
-  .section h2 { font-size: 1.8em; color: #58a6ff; margin-bottom: 30px; text-align: center; }
-
-  /* Before/After comparison */
-  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 40px; }
-  .compare-card { border-radius: 12px; padding: 28px; transition: transform 0.3s ease, box-shadow 0.3s ease; }
-  .compare-card:hover { transform: translateY(-4px); box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
-  .compare-card.before { background: #1c1c1c; border: 1px solid #da3633; }
-  .compare-card.after { background: #0d2230; border: 1px solid #238636; }
-  .compare-card h3 { font-size: 1.1em; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-  .compare-card.before h3 { color: #f85149; }
-  .compare-card.after h3 { color: #3fb950; }
-  .compare-card ul { list-style: none; }
-  .compare-card ul li { padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 0.95em; opacity: 0; transition: opacity 0.4s ease; }
-  .compare-card ul li:last-child { border-bottom: none; }
-  .compare-card.before li::before { content: "✘ "; color: #f85149; }
-  .compare-card.after li::before { content: "✔ "; color: #3fb950; }
-  .compare-card.visible li { opacity: 1; }
-
-  /* Terminal mockup */
-  .terminal { background: #161b22; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; margin: 30px 0; font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 0.85em; }
-  .terminal-bar { background: #21262d; padding: 8px 16px; display: flex; gap: 6px; align-items: center; }
-  .terminal-bar .title { color: #484f58; font-size: 0.8em; margin-left: 12px; }
-  .terminal-dot { width: 12px; height: 12px; border-radius: 50%; }
-  .terminal-dot.r { background: #f85149; }
-  .terminal-dot.y { background: #d29922; }
-  .terminal-dot.g { background: #3fb950; }
-  .terminal-body { padding: 16px 20px; line-height: 1.7; overflow-x: auto; min-height: 60px; }
-  .terminal-body .prompt { color: #3fb950; }
-  .terminal-body .cmd { color: #e0e0e0; }
-  .terminal-body .dim { color: #484f58; }
-  .terminal-body .blue { color: #58a6ff; }
-  .terminal-body .yellow { color: #d29922; }
-  .terminal-body .green { color: #3fb950; }
-  .terminal-body .orange { color: #f0883e; }
-  .terminal-body .cursor { display: inline-block; width: 8px; height: 16px; background: #3fb950; animation: blink 1s infinite; vertical-align: text-bottom; }
-  .typed-line { opacity: 0; transform: translateX(-10px); transition: all 0.15s ease; }
-  .typed-line.show { opacity: 1; transform: translateX(0); }
-
-  /* Features */
-  .features { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  .feature { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 24px; transition: transform 0.3s ease, border-color 0.3s ease; }
-  .feature:hover { transform: translateY(-3px); border-color: #58a6ff; }
-  .feature .icon { font-size: 1.6em; margin-bottom: 10px; }
-  .feature h3 { color: #c9d1d9; font-size: 1.05em; margin-bottom: 8px; }
-  .feature p { color: #8b949e; font-size: 0.9em; }
-
-  /* Install */
-  .install { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 32px; text-align: center; }
-  .install h2 { margin-bottom: 16px; }
-  .install code { display: block; background: #0d1117; color: #3fb950; padding: 16px; border-radius: 8px; font-family: 'SF Mono', monospace; font-size: 0.95em; margin: 12px auto; max-width: 500px; text-align: left; white-space: pre; }
-  .install .note { color: #8b949e; font-size: 0.85em; margin-top: 12px; }
-
-  /* Flow */
-  .flow { display: flex; justify-content: center; align-items: center; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
-  .flow-step { background: #21262d; border: 1px solid #30363d; border-radius: 8px; padding: 10px 16px; font-size: 0.85em; color: #c9d1d9; transition: transform 0.3s ease, background 0.3s ease; }
-  .flow-step:hover { transform: scale(1.05); background: #30363d; }
-  .flow-arrow { color: #484f58; font-size: 1.2em; }
-
-  .footer { text-align: center; padding: 40px 20px; color: #484f58; font-size: 0.85em; }
-
-  @media (max-width: 700px) {
-    .compare, .features { grid-template-columns: 1fr; }
-    .hero h1 { font-size: 2em; }
-    .flow { flex-direction: column; }
-    .flow-arrow { transform: rotate(90deg); }
-  }
-</style>
+<link rel="stylesheet" href="shared.css">
 </head>
 <body>
 
+<nav class="topnav">
+  <span class="brand">kiro-<span>session</span></span>
+  <a href="index.html" class="active">Overview</a>
+  <a href="search.html">Search</a>
+  <a href="split.html">Topic Split</a>
+  <a href="skill.html">Skill</a>
+  <a href="privacy.html">Privacy</a>
+</nav>
+
 <div class="hero">
   <h1>kiro-<span>session</span></h1>
-  <p>Smart session management for Kiro CLI. Find, search, split, and organize your AI conversations.</p>
-  <div class="badge">v0.3.0 · 19 KB · Zero Config</div>
+  <p>Find any conversation in milliseconds. Split long sessions by topic. Resume exactly where you left off. Works as a CLI tool and as a Kiro skill.</p>
+  <div class="badge">Local-first · SQLite + FTS5 · Python 3.10+ · Works with Kiro CLI</div>
 </div>
 
+<!-- 1. Before → Now -->
 <div class="section">
-  <h2 class="reveal up">The Problem vs The Solution</h2>
-  <div class="compare">
-    <div class="compare-card before reveal left">
-      <h3>😤 Before</h3>
+  <h2 class="reveal up">Before <span style="color:#f0883e;font-size:1.1em;">⟹</span> Now</h2>
+
+  <!-- Pain point list first -->
+  <div class="compare reveal up">
+    <div class="compare-card before">
+      <h3>😤 Without kiro-session</h3>
       <ul>
-        <li>Session list shows only IDs and one-line summaries</li>
-        <li>Can't search across session content</li>
-        <li>200-turn sessions mixing 5 different topics</li>
-        <li>No way to find "that Docker conversation from last week"</li>
-        <li>Stale sessions pile up with no cleanup</li>
-        <li>Resuming a specific session = scrolling through IDs</li>
+        <li>UUIDs + truncated first prompts</li>
+        <li>grep on summaries, misses later content</li>
+        <li>Resume: current directory only</li>
+        <li>Mixed topics — no way to split</li>
+        <li>Stale sessions pile up endlessly</li>
+        <li>No privacy controls at all</li>
       </ul>
     </div>
-    <div class="compare-card after reveal right">
-      <h3>🚀 After</h3>
+    <div class="compare-card after">
+      <h3>🚀 With kiro-session</h3>
       <ul>
-        <li>Rich interactive browser with names, topics, and metadata</li>
-        <li>Full-text search across all conversation content</li>
-        <li>LLM splits long sessions into focused topic-based ones</li>
-        <li>Find any session by keyword, directory, or recency</li>
-        <li>Smart cleanup suggestions with safety guardrails</li>
-        <li>One-command resume with precise session targeting</li>
+        <li>Names, topics, tags, metadata</li>
+        <li>FTS5 &lt;50ms or LLM semantic search</li>
+        <li>Cross-directory, inferred trust tools</li>
+        <li>LLM splits by meaning, resume by topic</li>
+        <li>Smart cleanup suggestions</li>
+        <li>Exclude, redact, delete topics, purge</li>
       </ul>
     </div>
   </div>
+
+  <!-- Terminal tab demos below -->
+  <div class="tab-group reveal up">
+    <div class="tabs">
+      <span class="tab-label">CLI</span>
+      <div class="tab active" data-target="cmp-list">📋 List</div>
+      <div class="tab" data-target="cmp-search">🔍 Search</div>
+      <div class="tab" data-target="cmp-resume">⏪ Resume</div>
+      <span class="tab-sep"></span>
+      <span class="tab-label">Skill</span>
+      <div class="tab" data-target="cmp-skill">🤖 In-Chat</div>
+    </div>
+
+    <div class="tab-content active" id="cmp-list">
+      <div class="terminal" data-typing data-loop>
+        <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Session List — Before vs Now</span></div>
+        <div class="terminal-body">
+<div class="tl"><span class="dim">── Before ──────────────────────────────────────</span></div>
+<div class="tl"></div>
+<div class="tl" data-cmd="kiro-cli chat --list-sessions"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">Chat sessions for /home/user/project:</span></div>
+<div class="tl"></div>
+<div class="tl">Chat SessionId: <span class="blue">612381ac-a3b4-4e7d-b1c2-ef4eb89c4919</span></div>
+<div class="tl">  <span class="dim">21 minutes ago</span> | continue with the refacto... | <span class="dim">148 msgs</span></div>
+<div class="tl"></div>
+<div class="tl">Chat SessionId: <span class="blue">5d32ae37-97c3-4733-bfcb-ccdd2ce988a8</span></div>
+<div class="tl">  <span class="dim">2 days ago</span> | yes | <span class="dim">106 msgs</span></div>
+<div class="tl"></div>
+<div class="tl">Chat SessionId: <span class="blue">c3ac5bb0-80b3-4420-b4b6-0f2f7206b4c6</span></div>
+<div class="tl">  <span class="dim">5 days ago</span> | help me with docker compo... | <span class="dim">34 msgs</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="red">  ✘ UUIDs, truncated first prompts. Which one had Docker networking? 🤷</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">── Now ─────────────────────────────────────────</span></div>
+<div class="tl"></div>
+<div class="tl" data-cmd="kiro-session"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl"><span class="blue">→</span>   612381ac  <span class="orange">API Gateway Migration</span>  <span class="dim">(4d, 3 topics, docs)</span></div>
+<div class="tl">     c3ac5bb0  <span class="orange">Docker Compose Setup</span>  <span class="dim">(25m, 2 topics, infra)</span></div>
+<div class="tl">  ⚡ 5d32ae37  Debug production logs...  <span class="dim">(2d, 53 turns, project-x)</span></div>
+<div class="tl">  ⚡ bcc7b244  Reply with exactly: OK  <span class="dim">(3h, 1 turn, temp)</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="green">  ✔ Names, topics, tags, recency — find anything instantly.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="cmp-search">
+      <div class="terminal" data-typing data-loop>
+        <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Search — Before vs Now</span></div>
+        <div class="terminal-body">
+<div class="tl"><span class="dim">── Before ──────────────────────────────────────</span></div>
+<div class="tl"></div>
+<div class="tl" data-cmd="kiro-cli chat --list-sessions | grep docker"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl">  <span class="dim">5 days ago</span> | help me with <span class="yellow">docker</span> compo... | <span class="dim">34 msgs</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="red">  ✘ grep on truncated first prompts. Misses sessions that discussed docker later.</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">── Now ─────────────────────────────────────────</span></div>
+<div class="tl"></div>
+<div class="tl" data-cmd="kiro-session search &quot;docker network&quot;"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">2 results (12ms)</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="blue">612381ac</span>  <span class="orange">API Gateway Migration</span>  <span class="dim">(4d, docs)</span></div>
+<div class="tl">  <span class="dim">...nginx reverse proxy for</span> <span class="yellow">docker</span> <span class="dim">bridge</span> <span class="yellow">network</span><span class="dim">...</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="blue">c3ac5bb0</span>  <span class="orange">Docker Compose Setup</span>  <span class="dim">(5d, infra)</span></div>
+<div class="tl">  <span class="dim">...configured</span> <span class="yellow">docker network</span> <span class="dim">for multi-container app...</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="green">  ✔ Full-text search across all content. &lt;50ms. Highlighted snippets.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="cmp-resume">
+      <div class="terminal" data-typing data-loop>
+        <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Resume — Before vs Now</span></div>
+        <div class="terminal-body">
+<div class="tl"><span class="dim">── Before ──────────────────────────────────────</span></div>
+<div class="tl"></div>
+<div class="tl" data-cmd="kiro-cli chat --resume-picker"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">  Scoped to current directory only.</span></div>
+<div class="tl"><span class="dim">  Don't remember which project it was in? Try every directory.</span></div>
+<div class="tl"></div>
+<div class="tl">  <span class="dim">21 minutes ago</span> | continue with the refacto... | <span class="dim">148 msgs</span></div>
+<div class="tl">  <span class="dim">2 days ago</span> | yes | <span class="dim">106 msgs</span></div>
+<div class="tl">  <span class="dim">5 days ago</span> | help me with docker compo... | <span class="dim">34 msgs</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="red">  ✘ Current directory only. Truncated first prompts. No topic selection.</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">── Now ─────────────────────────────────────────</span></div>
+<div class="tl"></div>
+<div class="tl" data-cmd="kiro-session [session-id]"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"><span class="dim">  → pick from list (or jump to detail with ID) → [r] Resume full / [1-3] by topic</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">Output:</span></div>
+<div class="tl">  <span class="cmd">cd /home/user/docs && kiro-cli chat --trust-tools=fs_read,fs_write,grep</span></div>
+<div class="tl">  <span class="cmd">/chat load ~/.kiro/tmp/612381ac-resume.json</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">  Original session remains unchanged. Trust tools auto-inferred from history.</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="green">  ✔ Cross-directory. All projects in one list. Resume full or by topic.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="cmp-skill">
+      <div class="terminal" data-typing data-loop>
+        <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">In-Chat Skill — Before vs Now</span></div>
+        <div class="terminal-body">
+<div class="tl"><span class="dim">── Before ──────────────────────────────────────</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="blue">You:</span> Where did I discuss Docker networking last week?</div>
+<div class="tl"></div>
+<div class="tl"><span class="orange">Kiro:</span> I can only see our current conversation. I can try to help:</div>
+<div class="tl"></div>
+<div class="tl">  <span class="dim">1. Use</span> --resume-picker <span class="dim">to browse session summaries and pick one</span></div>
+<div class="tl">  <span class="dim">2. I can look through session data in each project directory,</span></div>
+<div class="tl">     <span class="dim">but I'd need to read the full conversation content to find it</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="red">  ✘ No cross-session search. Slow, manual, hit-or-miss.</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">── Now ─────────────────────────────────────────</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="blue">You:</span> Where did I discuss Docker networking last week?</div>
+<div class="tl"></div>
+<div class="tl"><span class="orange">Kiro:</span> Found 2 sessions:</div>
+<div class="tl">  <span class="green">•</span> <span class="orange">API Gateway Migration</span> <span class="dim">(4d ago, docs)</span></div>
+<div class="tl">    <span class="dim">Configured nginx reverse proxy for Docker containers.</span></div>
+<div class="tl">  <span class="green">•</span> <span class="orange">Docker Compose Setup</span> <span class="dim">(5d ago, infra)</span></div>
+<div class="tl">    <span class="dim">Set up Docker network for multi-container app.</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="green">  ✔ Search history without leaving the conversation.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
-<div class="section">
-  <h2 class="reveal up">See It In Action</h2>
-
-  <div class="terminal reveal up" data-typewriter="term1">
-    <div class="terminal-bar">
-      <div class="terminal-dot r"></div>
-      <div class="terminal-dot y"></div>
-      <div class="terminal-dot g"></div>
-      <span class="title">Interactive Session Browser</span>
-    </div>
-    <div class="terminal-body" id="term1">
-<div class="typed-line"><span class="prompt">$</span> <span class="cmd">kiro-session</span></div>
-<div class="typed-line"></div>
-<div class="typed-line"><span class="dim">Sessions (↑↓/jk navigate, Enter select, q quit)</span></div>
-<div class="typed-line"><span class="dim">⚡= LLM Summary Pending</span></div>
-<div class="typed-line"></div>
-<div class="typed-line"><span class="blue">→</span>   612381ac  <span class="orange">API Gateway Migration Plan</span>  (4d, 7 topics, docs)</div>
-<div class="typed-line">  ⚡ 5d32ae37  Debug production logs...  (2d, 53 turns, project-x)</div>
-<div class="typed-line">     c3ac5bb0  <span class="orange">Docker Compose Setup</span>  (25m, 3 children, infra)</div>
-<div class="typed-line">  ⚡ bcc7b244  Reply with exactly: OK  (3h, 1 turns, temp)</div>
-<div class="typed-line">  ⚡ 93fb0554  hi  (13h, 1 turns, temp)</div>
-    </div>
-  </div>
-
-  <div class="terminal reveal up" data-typewriter="term2">
-    <div class="terminal-bar">
-      <div class="terminal-dot r"></div>
-      <div class="terminal-dot y"></div>
-      <div class="terminal-dot g"></div>
-      <span class="title">Session Detail & Actions</span>
-    </div>
-    <div class="terminal-body" id="term2">
-<div class="typed-line"><span class="dim">============================================================</span></div>
-<div class="typed-line"><span class="dim">Session:</span> <span class="orange">API Gateway Migration Plan</span></div>
-<div class="typed-line"><span class="dim">ID:</span>      612381ac</div>
-<div class="typed-line"><span class="dim">Dir:</span>     /home/user/docs</div>
-<div class="typed-line"><span class="dim">Updated:</span> 4d ago</div>
-<div class="typed-line"><span class="dim">Turns:</span>   58 prompts</div>
-<div class="typed-line"></div>
-<div class="typed-line"><span class="dim">Topics (3):</span></div>
-<div class="typed-line">  1. REST API endpoint refactoring</div>
-<div class="typed-line">  2. Auth middleware integration</div>
-<div class="typed-line">  3. Load testing and optimization</div>
-<div class="typed-line"><span class="dim">============================================================</span></div>
-<div class="typed-line"></div>
-<div class="typed-line">  <span class="green">[r]</span> Resume  — continue this conversation in Kiro CLI</div>
-<div class="typed-line">  <span class="green">[s]</span> Split   — break into topic-based sessions</div>
-<div class="typed-line">  <span class="green">[v]</span> Save    — export to JSON file</div>
-<div class="typed-line">  <span class="green">[d]</span> Delete  — remove this session from DB</div>
-<div class="typed-line">  <span class="green">[b]</span> Back    <span class="green">[q]</span> Quit</div>
-<div class="typed-line"><span class="prompt">&gt;</span> <span class="cursor"></span></div>
-    </div>
-  </div>
-
-  <div class="terminal reveal up" data-typewriter="term3">
-    <div class="terminal-bar">
-      <div class="terminal-dot r"></div>
-      <div class="terminal-dot y"></div>
-      <div class="terminal-dot g"></div>
-      <span class="title">Full-Text Deep Search</span>
-    </div>
-    <div class="terminal-body" id="term3">
-<div class="typed-line"><span class="prompt">$</span> <span class="cmd">kiro-session list --search "migration" --deep</span></div>
-<div class="typed-line"></div>
-<div class="typed-line">   612381ac  <span class="orange">API Gateway Migration Plan</span>  (4d, 7 topics, docs)</div>
-<div class="typed-line">⚡ 5d32ae37  Debug production logs...  (2d, 53 turns, project-x)</div>
-    </div>
-  </div>
-</div>
-
+<!-- 2. Key Features -->
 <div class="section">
   <h2 class="reveal up">Key Features</h2>
-  <div class="features">
-    <div class="feature reveal up">
+  <div class="cards reveal up">
+    <div class="card">
       <div class="icon">🔍</div>
-      <h3>Smart Search</h3>
-      <p>Search by keyword, directory, or recency. Deep search scans full conversation content across all sessions.</p>
+      <h3>Instant Search</h3>
+      <p>Full-text search across all conversations in &lt;50ms. Or use LLM smart search for semantic matching across languages.</p>
     </div>
-    <div class="feature reveal up">
-      <div class="icon">🧠</div>
-      <h3>LLM-Powered Index</h3>
-      <p>Generates meaningful session names and topic summaries. Runs in background — zero effort, richer info.</p>
+    <div class="card">
+      <div class="icon">🏷️</div>
+      <h3>Tags & Filters</h3>
+      <p>Auto-tags from file types, commands, directories. Manual tags too. Filter by <code>--file</code>, <code>--cmd</code>, <code>--dir</code>, <code>--recent</code>.</p>
     </div>
-    <div class="feature reveal up">
+    <div class="card">
       <div class="icon">✂️</div>
-      <h3>Semantic Topic Splitting</h3>
-      <p>LLM groups turns by meaning, not sequence. Review, adjust with natural language, and your preferences are learned.</p>
+      <h3>Topic Splitting</h3>
+      <p>LLM groups turns by meaning — not sequence. Non-destructive: kiro DB is never modified.</p>
     </div>
-    <div class="feature reveal up">
+    <div class="card">
       <div class="icon">⏪</div>
-      <h3>One-Command Resume</h3>
-      <p>Select any session and get a precise resume command. Works with both terminal and TUI mode.</p>
+      <h3>Resume by Topic</h3>
+      <p>Pick a topic number, get a cherry-picked session file. Load in kiro-cli and continue exactly where that topic left off.</p>
     </div>
-    <div class="feature reveal up">
+    <div class="card">
+      <div class="icon">🤖</div>
+      <h3>Skill Integration</h3>
+      <p>Search and list sessions from inside a kiro-cli conversation. No need to leave the chat — results in natural language.</p>
+    </div>
+    <div class="card">
+      <div class="icon">⚡</div>
+      <h3>Two-Layer Index</h3>
+      <p>Instant Scan on every startup (&lt;500ms). Deep Enrich via LLM in background. Usable without LLM.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🔒</div>
+      <h3>Privacy</h3>
+      <p>Exclude directories, redact turns, delete sensitive topics, purge index. Private mode auto-deletes session data on exit.</p>
+    </div>
+    <div class="card">
       <div class="icon">🧹</div>
       <h3>Safe Cleanup</h3>
-      <p>Smart suggestions for stale sessions. No auto-deletion — you always confirm. Split parents reclaimable after 30 days.</p>
-    </div>
-    <div class="feature reveal up">
-      <div class="icon">⚡</div>
-      <h3>Zero Config</h3>
-      <p>Works alongside native Kiro CLI. No API keys needed — uses kiro-cli's own LLM. Index self-heals on external changes.</p>
+      <p>Smart suggestions for stale, empty, and fully-derived sessions. No auto-deletion — always requires confirmation.</p>
     </div>
   </div>
 </div>
 
+<!-- 3. How It Works -->
 <div class="section">
   <h2 class="reveal up">How It Works</h2>
-  <div class="flow reveal up">
-    <div class="flow-step">📦 Install (30s)</div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step">🔍 Browse sessions</div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step">🧠 LLM indexes in background</div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step">✂️ Split long sessions</div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step">🧹 Cleanup when ready</div>
+  <p class="desc">Read-only on kiro DB. All index data in its own SQLite. Usable without LLM — LLM only enhances.</p>
+  <div class="cards reveal up">
+    <div class="card" style="text-align:center;">
+      <div class="icon">📦</div>
+      <h3>kiro-cli DB</h3>
+      <p>Read-only access to <code>conversations_v2</code>. kiro-session never writes to it.</p>
+    </div>
+    <div class="card" style="text-align:center;border-color:#3fb950;">
+      <div class="icon">⚡</div>
+      <h3>Instant Scan</h3>
+      <p>Every startup, &lt;500ms. Extracts metadata, transcripts → FTS5, files, commands, keywords. Zero tokens.</p>
+    </div>
+    <div class="card" style="text-align:center;border-color:#a371f7;">
+      <div class="icon">🧠</div>
+      <h3>Deep Enrich</h3>
+      <p>LLM in background. Quality names, semantic topics, smart tags. 3-10s/session. Graceful degradation.</p>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="icon">🗄️</div>
+      <h3>session-index.db</h3>
+      <p>SQLite with FTS5 full-text search, structured topics, tags, derivations, and file/command tracking.</p>
+    </div>
   </div>
 </div>
 
-<div class="section reveal up">
-  <div class="install">
-    <h2>Install in 30 Seconds</h2>
-    <code>tar xzf kiro-session-v0.3.0.tar.gz
-cd session-manager
-./install.sh</code>
-    <div class="note">Requires: Python 3.10+ · Kiro CLI · 19 KB download</div>
+<!-- 4. Get Started -->
+<div class="section">
+  <h2 class="reveal up">Get Started</h2>
+  <div class="terminal reveal up" data-typing style="max-width:480px;margin:0 auto;">
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Install</span></div>
+    <div class="terminal-body">
+<div class="tl" data-cmd="tar xzf kiro-session.tar.gz"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl" data-cmd="cd session-manager && ./install.sh"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"><span class="green">✔ Dependencies checked</span></div>
+<div class="tl"><span class="green">✔ Virtual environment created</span></div>
+<div class="tl"><span class="green">✔ kiro-session installed</span></div>
+    </div>
+  </div>
+  <p class="desc" style="margin-top:16px;">Requires Python 3.10+ and Kiro CLI.</p>
+</div>
+
+<!-- 5. Explore -->
+<div class="section">
+  <h2 class="reveal up">Explore</h2>
+  <div class="nav-cards reveal up" style="grid-template-columns:repeat(4,1fr);">
+    <a class="nav-card" href="search.html">
+      <div class="icon">🔍</div>
+      <h3>Search</h3>
+      <p>FTS5 instant + LLM semantic. Filters, snippets, tags.</p>
+    </a>
+    <a class="nav-card" href="split.html">
+      <div class="icon">✂️</div>
+      <h3>Topic Split</h3>
+      <p>Semantic grouping. Resume by topic. Derivation.</p>
+    </a>
+    <a class="nav-card" href="skill.html">
+      <div class="icon">🤖</div>
+      <h3>Skill</h3>
+      <p>Search sessions from inside a kiro-cli conversation.</p>
+    </a>
+    <a class="nav-card" href="privacy.html">
+      <div class="icon">🔒</div>
+      <h3>Privacy</h3>
+      <p>Exclude, redact, delete topics, purge.</p>
+    </a>
   </div>
 </div>
 
-<div class="footer">kiro-session v0.3.0</div>
+<div class="footer">kiro-session · <a href="https://github.com/boostery/kiro-session">GitHub</a> · By BoosterY</div>
 
-<script>
-// Scroll reveal
-const observer = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
-    if (entry.isIntersecting) {
-      entry.target.classList.add('visible');
-      // Stagger list items
-      const items = entry.target.querySelectorAll('li');
-      items.forEach((li, i) => {
-        setTimeout(() => li.style.opacity = '1', i * 120);
-      });
-      // Trigger typewriter
-      if (entry.target.dataset.typewriter) {
-        typewriter(entry.target.dataset.typewriter);
-      }
-      observer.unobserve(entry.target);
-    }
-  });
-}, { threshold: 0.15 });
-
-document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
-document.querySelectorAll('[data-typewriter]').forEach(el => observer.observe(el));
-
-// Typewriter effect for terminal lines
-function typewriter(termId) {
-  const lines = document.querySelectorAll(`#${termId} .typed-line`);
-  lines.forEach((line, i) => {
-    setTimeout(() => line.classList.add('show'), i * 80);
-  });
-}
-
-// Stagger feature cards
-const featureObserver = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
-    if (entry.isIntersecting) {
-      const features = entry.target.querySelectorAll('.feature');
-      features.forEach((f, i) => {
-        setTimeout(() => {
-          f.classList.add('visible');
-          f.style.animation = `fadeUp 0.5s ease ${i * 0.1}s forwards`;
-        }, i * 100);
-      });
-      featureObserver.unobserve(entry.target);
-    }
-  });
-}, { threshold: 0.1 });
-
-document.querySelectorAll('.features').forEach(el => featureObserver.observe(el));
-</script>
-
+<script src="shared.js"></script>
 </body>
 </html>

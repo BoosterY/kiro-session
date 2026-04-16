@@ -280,7 +280,8 @@ def _action_resume(conn, s: dict, tools: list[str]):
     print(f"  cd {directory} && kiro-cli chat{trust}")
     print(f"  Then: /chat load {tmp_path}")
     print(f"\n  Note: This creates a new session with the loaded history.")
-    print(f"  Original session remains unchanged. Delete with: kiro-session delete {s['id'][:8]}")
+    print(f"  Original session remains unchanged.")
+    print(f"  To delete original: kiro-session delete {s['id'][:8]}")
     print()
 
 

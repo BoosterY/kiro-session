@@ -624,12 +624,13 @@ def _record_derivation(conn: sqlite3.Connection, derived_id: str, marker: dict):
 
 
 def _clean_temp_files(conn: sqlite3.Connection):
-    """Remove temp files for derivations that have been recorded."""
+    """Remove temp files for derivations that have been recorded, and stale resume files."""
     tmp_dir = Path.home() / ".kiro" / "tmp"
     if not tmp_dir.exists():
         return
+    import time
+    now = time.time()
     for f in tmp_dir.glob("*-topic-*.json"):
-        # Check if derivation exists for this temp file
         parts = f.stem.split("-topic-")
         if len(parts) == 2:
             sid_prefix = parts[0]
@@ -639,6 +640,10 @@ def _clean_temp_files(conn: sqlite3.Connection):
             ).fetchone()
             if rows:
                 f.unlink(missing_ok=True)
+    # Clean resume files older than 1 day
+    for f in tmp_dir.glob("*-resume.json"):
+        if now - f.stat().st_mtime > 86400:
+            f.unlink(missing_ok=True)
 
 
 # Common stop words to exclude from keywords

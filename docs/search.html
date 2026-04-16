@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>kiro-session — Search</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">kiro-<span>session</span></span>
+  <a href="index.html">Overview</a>
+  <a href="search.html" class="active">Search</a>
+  <a href="split.html">Topic Split</a>
+  <a href="skill.html">Skill</a>
+  <a href="privacy.html">Privacy</a>
+</nav>
+
+<div class="hero">
+  <h1>🔍 <span>Search</span></h1>
+  <p>Find any conversation instantly. Two modes: fast for speed, smart for semantics.</p>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Two Search Modes</h2>
+  <div class="cards reveal up">
+    <div class="card" style="border-color:#1f6feb;">
+      <div class="icon">⚡</div>
+      <h3>fast mode <span style="color:#484f58;font-weight:400;">(default)</span></h3>
+      <p>FTS5 full-text search. &lt;50ms. Prefix matching, hyphen normalization, BM25 ranking, context snippets. Zero tokens.</p>
+    </div>
+    <div class="card" style="border-color:#a371f7;">
+      <div class="icon">🧠</div>
+      <h3>smart mode <span style="color:#484f58;font-weight:400;">(--smart)</span></h3>
+      <p>LLM judges relevance from session summaries. Cross-language matching. Returns a one-sentence explanation per result.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">See It In Action</h2>
+
+  <div class="tab-group reveal up">
+    <div class="tabs">
+      <div class="tab active" data-target="tab-fast">⚡ fast mode</div>
+      <div class="tab" data-target="tab-smart">🧠 smart mode</div>
+    </div>
+
+    <div class="tab-content active" id="tab-fast">
+      <div class="terminal" data-typing>
+        <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">&lt;50ms, zero tokens</span></div>
+        <div class="terminal-body">
+<div class="tl" data-cmd="kiro-session search &quot;docker network&quot;"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">2 results (12ms)</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="blue">612381ac</span>  <span class="orange">API Gateway Migration</span>  <span class="dim">(4d, docs)</span></div>
+<div class="tl">  <span class="dim">...configured nginx reverse proxy for</span> <span class="yellow">docker</span> <span class="dim">containers on bridge</span> <span class="yellow">network</span><span class="dim">...</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="blue">5d32ae37</span>  <span class="orange">Debug production logs</span>  <span class="dim">(2d, project-x)</span></div>
+<div class="tl">  <span class="dim">...nginx error 502,</span> <span class="yellow">docker network</span> <span class="dim">inspect showed missing subnet...</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-smart">
+      <div class="terminal" data-typing>
+        <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Semantic matching, cross-language</span></div>
+        <div class="terminal-body">
+<div class="tl" data-cmd="kiro-session search &quot;容器网络&quot; --smart"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">2 results (4.2s, LLM)</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="blue">612381ac</span>  <span class="orange">API Gateway Migration</span>  <span class="dim">(4d, docs)</span></div>
+<div class="tl">  <span class="green">Discussed Docker container networking and nginx reverse proxy setup.</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="blue">5d32ae37</span>  <span class="orange">Debug production logs</span>  <span class="dim">(2d, project-x)</span></div>
+<div class="tl">  <span class="green">Debugged nginx 502 errors related to container networking issues.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Filters</h2>
+  <p class="desc">Combine with either search mode, or use standalone to narrow your session list.</p>
+
+  <table class="tbl reveal up">
+    <tr><th>Filter</th><th>What it matches</th><th>Example</th></tr>
+    <tr><td><code>--file &lt;path&gt;</code></td><td>Files touched in the session</td><td><code>--file Dockerfile</code></td></tr>
+    <tr><td><code>--cmd &lt;command&gt;</code></td><td>Commands run during the session</td><td><code>--cmd docker</code></td></tr>
+    <tr><td><code>--dir &lt;directory&gt;</code></td><td>Working directory</td><td><code>--dir api</code></td></tr>
+    <tr><td><code>--recent &lt;duration&gt;</code></td><td>Last updated within</td><td><code>--recent 7d</code></td></tr>
+  </table>
+
+  <div class="terminal reveal up" data-typing>
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Combining search + filters</span></div>
+    <div class="terminal-body">
+<div class="tl" data-cmd="kiro-session list --file Dockerfile --recent 7d"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl" data-cmd="kiro-session search &quot;error&quot; --cmd docker"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl" data-cmd="kiro-session search &quot;performance&quot; --dir api --smart"><span class="prompt">$</span> <span class="cmd"></span></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Tags</h2>
+  <div class="cards reveal up">
+    <div class="card">
+      <div class="icon">🏷️</div>
+      <h3>Auto Tags</h3>
+      <p>Generated from file types, directory names, commands (Layer 0), and LLM smart tags (Layer 1). No effort needed.</p>
+    </div>
+    <div class="card">
+      <div class="icon">✏️</div>
+      <h3>User Tags</h3>
+      <p>Add your own via CLI or the <code>[t]</code> action in session detail. Fully searchable in both modes.</p>
+    </div>
+  </div>
+  <div class="terminal reveal up" data-typing style="margin-top:16px;">
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Tag management</span></div>
+    <div class="terminal-body">
+<div class="tl" data-cmd="kiro-session tag 612381ac &quot;docker&quot; &quot;production-issue&quot;"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"><span class="green">✔ Added tags: docker, production-issue</span></div>
+<div class="tl"></div>
+<div class="tl" data-cmd="kiro-session tag 612381ac --remove &quot;production-issue&quot;"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"><span class="green">✔ Removed tag: production-issue</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">kiro-session · <a href="index.html">Overview</a> · <a href="split.html">Topic Split →</a> · By BoosterY</div>
+
+<script src="shared.js"></script>
+</body>
+</html>

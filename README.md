@@ -1,75 +1,76 @@
 # kiro-session
 
-Interactive session manager for [Kiro CLI](https://kiro.dev/docs/cli/) — browse, search, split, save/restore, and clean up your chat sessions.
-
-📺 **[See the interactive showcase](https://boostery.github.io/kiro-session/)**
+Interactive session manager for [Kiro CLI](https://kiro.dev/docs/cli/) — browse, search, resume by topic, save/restore, and manage your chat sessions.
 
 ## Why
 
-Kiro CLI's built-in session management (`--list-sessions`, `--resume-picker`) shows only session IDs and one-line summaries. When you have dozens of sessions across multiple projects, it's hard to find what you need. And if you discussed multiple topics in one long session, there's no way to separate them.
+Kiro CLI's built-in session management shows only session IDs and one-line summaries, scoped to the current directory. When you have dozens of sessions across multiple projects, it's hard to find what you need.
 
 kiro-session solves this with:
-- **Rich browsing** — interactive picker with names, topics, directory, and lineage
+- **Cross-directory browsing** — see all sessions from all projects in one place
 - **Full-text search** — find sessions by any keyword in the conversation
-- **Semantic splitting** — LLM groups turns by meaning (not sequence), so related turns stay together even if interleaved
-- **Preference learning** — split suggestions improve based on your feedback
-- **Lifecycle management** — cleanup suggestions with safety guardrails (no auto-deletion)
+- **Topic splitting** — LLM groups turns by meaning, resume just the topic you need
+- **Private sessions** — incognito mode that auto-deletes local data on exit
+- **Dual storage support** — reads both SQLite (v1) and JSON/JSONL (v2) kiro-cli sessions
 
 ## Install
 
-### Quick install (from tarball)
-
 ```bash
-tar xzf kiro-session-v0.3.0.tar.gz
-cd session-manager
+git clone <repo> && cd kiro-session
 ./install.sh
 ```
 
-The installer checks dependencies, creates a Python venv, installs the `pick` library, and symlinks the CLI command.
+The installer creates a Python venv, installs dependencies (`pick`, `orjson`, `pyyaml`), and symlinks `kiro-session` to `~/.local/bin/`.
 
 ### Requirements
 
 - Python 3.10+
-- python3-venv
 - Kiro CLI installed and configured
 
 ## Quick Start
 
 ```bash
-# Browse all sessions interactively
-kiro-session
-
-# List sessions (non-interactive)
-kiro-session list --plain
-
-# Search by keyword
-kiro-session list --search "docker"
-
-# Deep search (searches full conversation content)
-kiro-session list --search "error" --deep
-
-# Filter by directory (basename or full path)
-kiro-session list --dir temp
-
-# Filter by recency
-kiro-session list --recent 7d
-
-# Split a long session into topic-based sessions
-kiro-session split
-
-# Export a session to a file
-kiro-session save abc12345
-
-# Restore from file
-kiro-session restore session-abc12345.json
-
-# Review cleanup suggestions
-kiro-session cleanup
+kiro-session                          # interactive browser (default)
+kiro-session list --plain             # non-interactive list
+kiro-session search "docker"          # full-text search
+kiro-session list --dir temp          # filter by directory
+kiro-session list --recent 7d         # filter by recency
+kiro-session list --file "main.py"    # filter by file touched
+kiro-session private                  # start a private session
 ```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `kiro-session` | Interactive session browser |
+| `kiro-session list [options]` | List/filter sessions |
+| `kiro-session search <query>` | Full-text search across all sessions |
+| `kiro-session index [--rebuild]` | Build/refresh LLM index |
+| `kiro-session save <id> [path]` | Export session to JSON |
+| `kiro-session restore <path>` | Import session from JSON |
+| `kiro-session delete <id>` | Delete session from kiro DB |
+| `kiro-session tag <id> [tags]` | Add/remove user tags |
+| `kiro-session cleanup` | Review cleanup suggestions |
+| `kiro-session redact <id> --turn N` | Remove a turn from index |
+| `kiro-session config [key] [value]` | View/set configuration |
+| `kiro-session private [-a]` | Start private session (auto-deleted on exit) |
+
+### list options
+
+| Flag | Description |
+|------|-------------|
+| `--dir`, `-d` | Filter by directory basename or path |
+| `--recent`, `-r` | Filter by recency (e.g. `7d`, `24h`) |
+| `--file` | Filter by file touched in session |
+| `--cmd` | Filter by command run in session |
+| `--plain` | Non-interactive output |
+| `--json` | JSON output |
+| `<session-id>` | Show detail for specific session |
 
 ## Session Detail & Actions
 
-Select a session in the interactive browser to see its detail page:
+Select a session to see its detail page:
 
 ```
 ============================================================
@@ -78,86 +79,98 @@ ID:      612381ac
 Dir:     /home/user/docs
 Updated: 4d ago
 Turns:   58 prompts
+Tags:    [api] [migration] [nodejs]
 
 Topics (3):
   1. REST API endpoint refactoring
   2. Auth middleware integration
   3. Load testing and optimization
 ============================================================
-⚡ Basic index only. Run 'kiro-session index' for better summaries and split suggestions.
 
-  [r] Resume  — continue this conversation in Kiro CLI
-  [s] Split   — break into topic-based sessions
-  [v] Save    — export to JSON file
-  [d] Delete  — remove this session from DB
-  [i] Index   — generate LLM summary for this session (~5s)
+  [r] Resume full session
+  [1-3] Resume by topic
+  [t] Edit tags
+  [v] Save    [d] Delete
+  [x] Delete topic
+  [i] Index
   [b] Back    [q] Quit
 ```
 
-- `[i]` only appears for sessions without LLM summaries (marked ⚡ in the list)
-- `[r]` marks the session as most recent and gives precise resume commands for both terminal and TUI mode
-- `[d]` requires confirmation before deleting
+- **Resume full** — generates temp JSON, gives `kiro-cli chat` + `/chat load` command
+- **Resume by topic** — cherry-picks only the turns for that topic
+- **Index** — runs LLM enrichment for better names, topics, and tags (~5s)
+- Sessions without LLM index are marked ⚡ in the list
 
-## Commands
+## Private Sessions
 
-| Command | Description |
-|---------|-------------|
-| `kiro-session` | Interactive session browser (default) |
-| `kiro-session list [options]` | List/search/filter sessions |
-| `kiro-session index` | Build LLM index (runs automatically in background) |
-| `kiro-session split [id]` | Interactive topic splitting |
-| `kiro-session undo-split [id]` | Revert a split |
-| `kiro-session save <id> [path]` | Export session to JSON |
-| `kiro-session restore <path>` | Import session from JSON |
-| `kiro-session cleanup` | Review and clean up stale sessions |
+Start a private/incognito session that is automatically deleted when you exit:
 
-### list options
+```bash
+kiro-session private          # start private session
+kiro-session private -a       # with all tools trusted
+```
 
-| Flag | Description |
-|------|-------------|
-| `--search`, `-s` | Filter by keyword (searches index metadata) |
-| `--deep` | Search full conversation content (use with `--search`) |
-| `--dir`, `-d` | Filter by directory (basename or full path) |
-| `--recent`, `-r` | Filter by recency (e.g. `7d`, `24h`) |
-| `--plain` | Non-interactive output |
+- Runs kiro-cli in a sandboxed directory
+- On normal exit: session is immediately deleted from all local storage
+- On abnormal exit (window close): cleaned up on next `kiro-session` invocation
+
+**Note:** This only deletes local session data. Content sent to the LLM provider during the session may still be retained server-side per the provider's data policies.
+
+## Privacy
+
+```bash
+# Exclude a directory — purges existing sessions and auto-deletes future ones
+kiro-session config privacy.exclude_dirs /path/to/sensitive/project
+
+# Purge entire index
+kiro-session config privacy.purge
+
+# Redact a specific turn
+kiro-session redact abc12345 --turn 3
+```
 
 ## How It Works
 
+### Architecture
+
+```
+Layer 0: Extractor (read-only scan of kiro DB + JSONL files)
+Layer 1: LLM Enrichment (names, topics, tags via kiro-cli headless)
+Layer 2: UI (pick-based interactive browser + CLI output)
+```
+
+### Dual Storage
+
+kiro-cli stores sessions in two backends:
+- **v1 (SQLite):** `~/.local/share/kiro-cli/data.sqlite3`
+- **v2 (JSON/JSONL):** `~/.kiro/sessions/cli/*.json + *.jsonl`
+
+kiro-session reads both and merges into a unified index at `~/.kiro/session-index.db`.
+
 ### Indexing
 
-Session metadata is cached in `~/.kiro/session-index.json`. Updated lazily on every command (<100ms). LLM indexing generates better names, topic summaries, and semantic split groups.
+- Layer 0 runs automatically on every command (<100ms incremental)
+- LLM enrichment generates better names, topic summaries, and semantic tags
+- Triggered manually via `kiro-session index` or `[i]` in session detail
 
-LLM indexing runs automatically in the background:
-- Triggers when ≥3 sessions are unindexed and last index was >1 day ago
-- Starts after a 30-minute delay to avoid competing with active work
-- Can also be triggered manually: `kiro-session index` or `[i]` in session detail
+### Resume
 
-### Splitting
+Resume uses `/chat load` with a generated temp JSON file. This creates a new session with the loaded history — the original session remains unchanged.
 
-LLM groups conversation turns by semantic meaning and project context — not by sequential order. If you discussed Docker at turns 0-5 and returned to it at turns 11-15, those turns are grouped together.
+## Configuration
 
-You review a preview, accept or give natural language feedback ("merge the first two"), and LLM adjusts. Preferences are learned over time (after 3+ feedbacks).
+```bash
+kiro-session config                        # show all
+kiro-session config llm.provider           # get value
+kiro-session config llm.provider ollama    # set value
+```
 
-### Cleanup
-
-- Sessions >60 days old with ≤1 turn trigger a startup warning
-- Split parent sessions are suggested for archival after 30 days (when all children exist)
-- **No auto-deletion** — all cleanup actions require user confirmation
-
-### Compatibility
-
-Works alongside native Kiro CLI session commands. If you delete a session with `--delete-session`, the index self-heals on next access. LLM calls use kiro-cli's own headless mode — no API keys or extra config needed. Temporary sessions created by LLM calls are automatically cleaned up.
-
-## Startup Notifications
-
-Every time you run `kiro-session`, the wrapper shows relevant hints:
-- ⚠ Stale sessions (>60d) → `kiro-session cleanup`
-- ℹ Sessions without LLM summaries (auto-indexing in background)
-- ✂ Sessions with multiple topics → `kiro-session split`
-
-## Architecture
-
-See [references/architecture.md](references/architecture.md) for design details.
+| Key | Default | Description |
+|-----|---------|-------------|
+| `llm.provider` | `auto` | LLM provider: `auto`, `kiro`, `ollama` |
+| `llm.auto_enrich` | `true` | Auto-enrich on detail view |
+| `privacy.exclude_dirs` | `[]` | Directories to exclude and purge |
+| `privacy.exclude_sessions` | `[]` | Session IDs to exclude |
 
 ## License
 

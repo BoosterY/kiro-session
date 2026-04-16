@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>kiro-session — Privacy & Cleanup</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">kiro-<span>session</span></span>
+  <a href="index.html">Overview</a>
+  <a href="search.html">Search</a>
+  <a href="split.html">Topic Split</a>
+  <a href="skill.html">Skill</a>
+  <a href="privacy.html" class="active">Privacy</a>
+</nav>
+
+<div class="hero">
+  <h1>🔒 Privacy & <span>Cleanup</span></h1>
+  <p>You control what gets indexed, what gets removed, and what gets deleted. Nothing happens without your confirmation.</p>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Privacy Controls</h2>
+  <div class="cards reveal up">
+    <div class="card">
+      <div class="icon">🚫</div>
+      <h3>Exclude</h3>
+      <p>Skip entire directories or specific sessions from indexing. They never enter the index.</p>
+    </div>
+    <div class="card">
+      <div class="icon">✂️</div>
+      <h3>Redact</h3>
+      <p>Remove a specific turn from the index. kiro DB untouched. Content purged from disk.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🗑️</div>
+      <h3>Delete Topic</h3>
+      <p>Permanently remove a sensitive topic. Other topics preserved as new sessions first.</p>
+    </div>
+    <div class="card">
+      <div class="icon">💣</div>
+      <h3>Purge Index</h3>
+      <p>Delete the entire index. kiro DB unaffected. Rebuilds from scratch on next startup.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Exclude from Indexing</h2>
+  <div class="terminal reveal up" data-typing>
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">~/.kiro/session-config.yml</span></div>
+    <div class="terminal-body">
+<div class="tl"><span class="blue">privacy</span>:</div>
+<div class="tl">  <span class="blue">exclude_dirs</span>:</div>
+<div class="tl">    - <span class="yellow">/home/user/personal</span></div>
+<div class="tl">    - <span class="yellow">/home/user/secret-project</span></div>
+<div class="tl">  <span class="blue">exclude_sessions</span>:</div>
+<div class="tl">    - <span class="yellow">abc12345</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Redact a Turn</h2>
+  <div class="terminal reveal up" data-typing>
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Remove sensitive content from index</span></div>
+    <div class="terminal-body">
+<div class="tl" data-cmd="kiro-session redact 612381ac --turn 5"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">Turn 5 content:</span></div>
+<div class="tl">  <span class="dim">User: "Here's my API key: sk-..."</span></div>
+<div class="tl">  <span class="dim">Assistant: "I'll use that key to..."</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="yellow">⚠ Removes turn 5 from index (search, files, commands).</span></div>
+<div class="tl"><span class="yellow">  kiro DB is NOT modified.</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">Proceed? [y/N]</span> <span class="cmd">y</span></div>
+<div class="tl"><span class="green">✔ Turn 5 redacted. FTS5 optimize complete.</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Delete a Sensitive Topic</h2>
+  <p class="desc">Permanently remove a topic from kiro DB. Other topics are preserved as new sessions first.</p>
+
+  <div class="flow reveal up">
+    <div class="flow-step">Show topic breakdown</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">Generate files for other topics</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">User loads preserved topics</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step active" style="border-color:#f85149;">Delete original</div>
+  </div>
+
+  <div class="terminal reveal up" data-typing>
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">delete-topic flow</span></div>
+    <div class="terminal-body">
+<div class="tl" data-cmd="kiro-session delete-topic 612381ac --topic 2"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl"><span class="red">Topic to delete:</span></div>
+<div class="tl">  <span class="red">2. "Auth middleware"</span> <span class="dim">(turns: 5, 6, 7, 8, 9)</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="green">Topics to preserve:</span></div>
+<div class="tl">  1. "REST API refactoring" <span class="dim">(turns: 0, 1, 2, 3, 4)</span></div>
+<div class="tl">  3. "Load testing" <span class="dim">(turns: 10, 11, 12, 13)</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="yellow">⚠ Turns 5-9 will be permanently deleted from kiro DB.</span></div>
+<div class="tl"></div>
+<div class="tl">  <span class="dim">Step 1:</span> <span class="cmd">/chat load ~/.kiro/tmp/612381ac-topic-1.json</span></div>
+<div class="tl">  <span class="dim">Step 2:</span> <span class="cmd">/chat load ~/.kiro/tmp/612381ac-topic-3.json</span></div>
+<div class="tl">  <span class="dim">Step 3:</span> Confirm deletion of original session.</div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">Proceed? [y/N]</span> <span class="cmd">y</span></div>
+<div class="tl"><span class="green">✔ Temp files generated. Load them, then confirm deletion.</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Purge Index</h2>
+  <div class="terminal reveal up" data-typing>
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Start fresh</span></div>
+    <div class="terminal-body">
+<div class="tl" data-cmd="kiro-session config privacy.purge"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl"><span class="red">⚠ Deletes entire session-index.db</span></div>
+<div class="tl"><span class="dim">  Topics, derivations, tags — all gone. kiro DB unaffected.</span></div>
+<div class="tl"><span class="dim">  Rebuilds Layer 0 from scratch on next startup.</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">Proceed? [y/N]</span> <span class="cmd">y</span></div>
+<div class="tl"><span class="green">✔ session-index.db deleted.</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Smart Cleanup</h2>
+  <p class="desc">Suggestions on startup. No auto-deletion — every action requires confirmation.</p>
+
+  <div class="terminal reveal up" data-typing>
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">kiro-session cleanup</span></div>
+    <div class="terminal-body">
+<div class="tl" data-cmd="kiro-session cleanup"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl"><span class="red">🗑 Stale sessions (&gt;90d, ≤2 turns):</span></div>
+<div class="tl">  e4efb70f  <span class="dim">test</span>  <span class="dim">(95d ago, 1 turn)</span></div>
+<div class="tl">  93fb0554  <span class="dim">hi</span>  <span class="dim">(102d ago, 1 turn)</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="red">🗑 Empty sessions (0 turns):</span></div>
+<div class="tl">  a1b2c3d4  <span class="dim">(empty)</span>  <span class="dim">(3d ago)</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="blue">📦 Fully derived (&gt;30d, all topics have new sessions):</span></div>
+<div class="tl">  612381ac  <span class="orange">API Gateway Migration</span>  <span class="dim">(45d, 3/3 derived)</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">kiro-session · <a href="split.html">← Topic Split</a> · <a href="index.html">Overview</a> · By BoosterY</div>
+
+<script src="shared.js"></script>
+</body>
+</html>

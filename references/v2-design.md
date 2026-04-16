@@ -269,8 +269,9 @@ CREATE TABLE derivations (
 ### Temp file lifecycle
 
 ```
-Created:  when user selects resume by topic
-Cleaned:  next Layer 0 scan, after derivation is recorded
+Created:  when user selects resume (full or by topic)
+Cleaned:  topic files — next Layer 0 scan, after derivation is recorded
+          resume files — auto-deleted after 1 day
           OR kiro-session cleanup (catches orphaned temp files)
 Location: ~/.kiro/tmp/
 ```
@@ -545,6 +546,20 @@ kiro-session redact <session-id> --turn 5    # remove specific turn from index o
 ```
 
 Removes the turn's content from our index (fts_content, turns, files_used, commands). Does not modify kiro DB. FTS5 `optimize` is run after redaction to physically purge deleted content from disk.
+
+### Private sessions
+
+```bash
+kiro-session private          # start private session
+kiro-session private -a       # with all tools trusted
+```
+
+Runs kiro-cli in a sandboxed directory (`~/.kiro/skills/session-manager/private/`). Two-layer cleanup:
+
+1. **Normal exit**: `cmd_private` wrapper deletes session from kiro DB immediately after kiro-cli exits
+2. **Abnormal exit** (window close, crash): `ensure_index_fresh` calls `_cleanup_private_dir()` before scanning, deleting any leftover private sessions
+
+Only deletes local data. Content sent to LLM provider may be retained server-side.
 
 ### Purge all index data
 

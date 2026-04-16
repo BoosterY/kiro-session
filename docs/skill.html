@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>kiro-session — Skill Integration</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">kiro-<span>session</span></span>
+  <a href="index.html">Overview</a>
+  <a href="search.html">Search</a>
+  <a href="split.html">Topic Split</a>
+  <a href="skill.html" class="active">Skill</a>
+  <a href="privacy.html">Privacy</a>
+</nav>
+
+<div class="hero">
+  <h1>🤖 <span>Skill</span> Integration</h1>
+  <p>Search and browse session history without leaving your kiro-cli conversation.</p>
+</div>
+
+<!-- How it works -->
+<div class="section">
+  <h2 class="reveal up">How It Works</h2>
+  <p class="desc">When triggered as a skill inside kiro-cli, commands output structured JSON. The LLM in your active conversation parses it and responds in natural language.</p>
+
+  <div class="flow reveal up">
+    <div class="flow-step">💬 You ask in chat</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step active">🤖 Skill runs <code>--json</code></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">📋 JSON result</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">💬 Kiro answers naturally</div>
+  </div>
+</div>
+
+<!-- Conversation demo -->
+<div class="section">
+  <h2 class="reveal up">In-Chat Experience</h2>
+
+  <div class="terminal reveal up" data-typing data-loop>
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Inside a kiro-cli conversation</span></div>
+    <div class="terminal-body">
+<div class="tl"><span class="blue">You:</span> Find my sessions about Docker networking from this week</div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">  ⚙ kiro-session search "docker network" --recent 7d --json</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="orange">Kiro:</span> Found 2 sessions:</div>
+<div class="tl"></div>
+<div class="tl">  <span class="green">•</span> <span class="orange">API Gateway Migration</span> <span class="dim">(4d ago, /home/user/docs, 58 turns)</span></div>
+<div class="tl">    <span class="dim">Configured nginx reverse proxy for Docker containers on bridge network.</span></div>
+<div class="tl"></div>
+<div class="tl">  <span class="green">•</span> <span class="orange">Docker Compose Setup</span> <span class="dim">(5d ago, /home/user/infra, 34 turns)</span></div>
+<div class="tl">    <span class="dim">Set up Docker network for multi-container app with custom subnets.</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">  To resume one, run in your terminal:</span></div>
+<div class="tl"><span class="dim">    kiro-session   →   select session   →   [r] Resume</span></div>
+    </div>
+  </div>
+
+  <div class="terminal reveal up" data-typing>
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Listing with filters</span></div>
+    <div class="terminal-body">
+<div class="tl"><span class="blue">You:</span> What sessions touched Dockerfile recently?</div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">  ⚙ kiro-session list --file Dockerfile --recent 7d --json</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="orange">Kiro:</span> 3 sessions touched Dockerfile in the last 7 days:</div>
+<div class="tl"></div>
+<div class="tl">  <span class="green">•</span> <span class="orange">Docker Compose Setup</span> <span class="dim">(5d ago, infra, 34 turns)</span></div>
+<div class="tl">  <span class="green">•</span> <span class="orange">CI Pipeline Fix</span> <span class="dim">(2d ago, project-x, 22 turns)</span></div>
+<div class="tl">  <span class="green">•</span> <span class="orange">Production Deploy</span> <span class="dim">(6h ago, ops, 15 turns)</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- JSON output -->
+<div class="section">
+  <h2 class="reveal up">Under the Hood: --json</h2>
+  <p class="desc">All non-interactive commands support <code>--json</code> for clean structured output — no ANSI codes, no progress bars.</p>
+
+  <div class="terminal reveal up" data-typing>
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Raw JSON output</span></div>
+    <div class="terminal-body">
+<div class="tl" data-cmd="kiro-session search &quot;docker&quot; --recent 7d --json"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl">{</div>
+<div class="tl">  <span class="blue">"results"</span>: [</div>
+<div class="tl">    {</div>
+<div class="tl">      <span class="blue">"id"</span>: <span class="yellow">"612381ac"</span>,</div>
+<div class="tl">      <span class="blue">"name"</span>: <span class="yellow">"API Gateway Migration"</span>,</div>
+<div class="tl">      <span class="blue">"dir"</span>: <span class="yellow">"docs"</span>,</div>
+<div class="tl">      <span class="blue">"updated"</span>: <span class="yellow">"4d ago"</span>,</div>
+<div class="tl">      <span class="blue">"turns"</span>: <span class="orange">58</span>,</div>
+<div class="tl">      <span class="blue">"snippet"</span>: <span class="yellow">"...nginx reverse proxy for docker..."</span></div>
+<div class="tl">    }</div>
+<div class="tl">  ]</div>
+<div class="tl">}</div>
+    </div>
+  </div>
+</div>
+
+<!-- What's available -->
+<div class="section">
+  <h2 class="reveal up">What Works in Skill Mode</h2>
+  <div class="cards reveal up">
+    <div class="card" style="border-color:#3fb950;">
+      <div class="icon">✅</div>
+      <h3>Available</h3>
+      <p><code>search</code>, <code>list</code> with all filters (<code>--file</code>, <code>--cmd</code>, <code>--dir</code>, <code>--recent</code>, <code>--smart</code>). All via <code>--json</code>.</p>
+    </div>
+    <div class="card" style="border-color:#d29922;">
+      <div class="icon">🔀</div>
+      <h3>Guided to Terminal</h3>
+      <p>Interactive operations — browse, split, tag, resume, cleanup — require a terminal. The skill tells you exactly what to run.</p>
+    </div>
+  </div>
+</div>
+
+<div class="footer">kiro-session · <a href="split.html">← Topic Split</a> · <a href="privacy.html">Privacy →</a> · By BoosterY</div>
+
+<script src="shared.js"></script>
+</body>
+</html>

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>kiro-session — Topic Split</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">kiro-<span>session</span></span>
+  <a href="index.html">Overview</a>
+  <a href="search.html">Search</a>
+  <a href="split.html" class="active">Topic Split</a>
+  <a href="skill.html">Skill</a>
+  <a href="privacy.html">Privacy</a>
+</nav>
+
+<div class="hero">
+  <h1>✂️ Topic <span>Split</span></h1>
+  <p>One long session, multiple topics? Split by meaning, resume just the part you need.</p>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Semantic Grouping</h2>
+  <p class="desc">LLM groups turns by meaning, not sequence. If you discussed Docker at turns 0-5 and returned at turns 11-15, they stay together.</p>
+
+  <div class="flow reveal up">
+    <div class="flow-step">🧠 LLM analyzes all turns</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step active">📋 Topic groups in index</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">📄 Temp file on resume</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">🔗 Derivation auto-tracked</div>
+  </div>
+
+  <div class="highlight reveal up">
+    <h4>Non-destructive</h4>
+    <ul>
+      <li>Topic mappings stored in the index only — kiro DB is never modified</li>
+      <li>Temp files generated on-demand when you choose to resume a topic</li>
+      <li>You load the topic in kiro-cli via <code>/chat load</code> — it becomes a new independent session</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Topics in Session Detail</h2>
+  <div class="terminal reveal up" data-typing>
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Session with 3 topics</span></div>
+    <div class="terminal-body">
+<div class="tl"><span class="dim">============================================================</span></div>
+<div class="tl"><span class="dim">Session:</span> <span class="orange">API Gateway Migration</span></div>
+<div class="tl"><span class="dim">ID:</span>      612381ac    <span class="dim">Turns:</span> 58    <span class="dim">Tags:</span> <span class="blue">[docker]</span> <span class="blue">[nginx]</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">Topics (3):</span></div>
+<div class="tl">  <span class="yellow">1.</span> REST API endpoint refactoring</div>
+<div class="tl">     <span class="dim">Refactored /api/v1 endpoints, added pagination support.</span></div>
+<div class="tl">  <span class="yellow">2.</span> Auth middleware integration  <span class="green">✔ derived</span></div>
+<div class="tl">     <span class="dim">Integrated JWT auth middleware, configured CORS.</span></div>
+<div class="tl">  <span class="yellow">3.</span> Load testing and optimization</div>
+<div class="tl">     <span class="dim">Set up k6 load tests, optimized DB queries.</span></div>
+<div class="tl"><span class="dim">============================================================</span></div>
+<div class="tl"></div>
+<div class="tl">  <span class="green">[r]</span> Resume full session</div>
+<div class="tl">  <span class="green">[1-3]</span> Resume by topic</div>
+<div class="tl">  <span class="green">[t]</span> Edit tags    <span class="green">[v]</span> Save    <span class="green">[d]</span> Delete    <span class="green">[x]</span> Delete topic</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Resume by Topic</h2>
+  <p class="desc">Pick a topic number → cherry-picked turns → temp file → load in kiro-cli.</p>
+
+  <div class="terminal reveal up" data-typing>
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Resuming topic #1</span></div>
+    <div class="terminal-body">
+<div class="tl" data-cmd="1"><span class="prompt">&gt;</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl"><span class="green">✔</span> Generated: <span class="orange">REST API endpoint refactoring</span></div>
+<div class="tl"><span class="dim">  Turns: 0, 1, 2, 3, 4, 10, 11</span> <span class="dim">(non-contiguous — grouped by meaning)</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">Resume in kiro-cli:</span></div>
+<div class="tl">  <span class="cmd">cd /home/user/docs && kiro-cli chat</span></div>
+<div class="tl">  <span class="cmd">/chat load ~/.kiro/tmp/612381ac-topic-1.json</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">Inferred trust tools:</span></div>
+<div class="tl">  <span class="blue">--trust-tools=fs_read,fs_write,execute_bash,grep,glob</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Derivation Tracking</h2>
+  <p class="desc">When you load a topic file in kiro-cli, the new session is automatically linked back to its source.</p>
+
+  <div class="cards reveal up">
+    <div class="card">
+      <div class="icon">🔗</div>
+      <h3>Automatic</h3>
+      <p>Source markers in temp files are detected on next index scan. No manual linking needed.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🌳</div>
+      <h3>Multi-Hop Chains</h3>
+      <p>Split a derived session again — the chain traces back to the original root session.</p>
+    </div>
+    <div class="card">
+      <div class="icon">📦</div>
+      <h3>Fully Derived</h3>
+      <p>When all topics have derived sessions, the source is marked for archival in cleanup.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🔓</div>
+      <h3>Independent</h3>
+      <p>Derived sessions are fully independent. Deleting one never affects the other.</p>
+    </div>
+  </div>
+
+  <div class="terminal reveal up" data-typing>
+    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Fully derived session</span></div>
+    <div class="terminal-body">
+<div class="tl"><span class="dim">Session:</span> <span class="orange">API Gateway Migration</span>  <span class="blue">📦 Fully derived (3/3 topics)</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="dim">Topics:</span></div>
+<div class="tl">  <span class="yellow">1.</span> REST API refactoring       <span class="green">✔ derived</span> <span class="dim">→ a1b2c3d4</span></div>
+<div class="tl">  <span class="yellow">2.</span> Auth middleware             <span class="green">✔ derived</span> <span class="dim">→ e5f6g7h8</span></div>
+<div class="tl">  <span class="yellow">3.</span> Load testing               <span class="green">✔ derived</span> <span class="dim">→ i9j0k1l2</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 class="reveal up">Large Sessions</h2>
+  <div class="highlight reveal up">
+    <h4>Chunk-Analyze-Merge (50+ turns)</h4>
+    <ul>
+      <li>Splits turns into ~50-turn chunks, each analyzed independently</li>
+      <li>Merge pass: LLM reviews all chunk topics, merges duplicates, deduplicates turn indices</li>
+      <li>A 500-turn session processes in chunks — no context window limits</li>
+    </ul>
+  </div>
+</div>
+
+<div class="footer">kiro-session · <a href="search.html">← Search</a> · <a href="privacy.html">Privacy →</a> · By BoosterY</div>
+
+<script src="shared.js"></script>
+</body>
+</html>
