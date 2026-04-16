@@ -28,27 +28,25 @@ if warn > 0:
 fi
 
 # --- Background auto-enrich (Layer 1) ---
-LAST_ENRICH="$HOME/.kiro/.enrich-last"
 if [ -f "$INDEX_DB" ]; then
-    RUN_ENRICH=false
-    if [ ! -f "$LAST_ENRICH" ]; then
-        RUN_ENRICH=true
-    elif [ "$(find "$LAST_ENRICH" -mmin +1440 2>/dev/null)" ]; then
-        RUN_ENRICH=true
-    fi
-
-    if [ "$RUN_ENRICH" = true ]; then
-        # Check config: auto_enrich enabled?
-        AUTO=$("$PY" -c "
+    # Check config: auto_enrich enabled?
+    AUTO=$("$PY" -c "
 import sys; sys.path.insert(0, '$SCRIPT_DIR/scripts')
 from config import load_config, get
 print('yes' if get(load_config(), 'llm.auto_enrich') else 'no')
 " 2>/dev/null)
 
-        if [ "$AUTO" = "yes" ]; then
-            touch "$LAST_ENRICH"
+    if [ "$AUTO" = "yes" ]; then
+        # Check if any sessions need enrichment
+        NEED=$("$PY" -c "
+import sqlite3
+conn = sqlite3.connect('$INDEX_DB')
+n = conn.execute('SELECT COUNT(*) FROM sessions WHERE llm_enriched = 0 AND user_turn_count >= 2').fetchone()[0]
+print(n)
+" 2>/dev/null)
+
+        if [ "$NEED" -gt 0 ] 2>/dev/null; then
             (
-                sleep 1800  # 30 min delay
                 "$PY" "$SCRIPT_DIR/scripts/kiro_session.py" index >/dev/null 2>&1
             ) &
             disown

@@ -151,7 +151,8 @@ kiro-session reads both and merges into a unified index at `~/.kiro/session-inde
 
 - Layer 0 runs automatically on every command (<100ms incremental)
 - LLM enrichment generates better names, topic summaries, and semantic tags
-- Triggered manually via `kiro-session index` or `[i]` in session detail
+- Auto-enrichment runs in background on every startup when unindexed sessions exist — no frequency limits
+- Can also be triggered manually: `kiro-session index` or `[i]` in session detail
 
 ### Resume
 

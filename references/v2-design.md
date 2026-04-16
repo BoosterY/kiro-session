@@ -90,14 +90,14 @@ Layer 0 scans both sources and merges into a unified index. Session IDs are uniq
 ### Layer 1: LLM Enrichment (on by default)
 
 **Triggers**:
-- Background auto: 30 min delay after startup, processes unindexed sessions
+- Background auto: every startup, processes unindexed sessions (≥2 turns) — no frequency limits, no delay
 - Manual bulk: `kiro-session index` (immediate)
 - On-demand single: detail page `[i]` or split request
 - Always pre-runs Layer 0 before starting
 
 **Performance**: 3-10s per session.
 
-**Token cost**: ~500-2000 tokens/session. No budget limits in phase 1.
+**Token cost**: ~500-2000 tokens/session. No budget limits — all unindexed sessions are processed automatically.
 
 **Large session strategy**: for sessions with 50+ turns, use chunk-analyze-merge:
 1. Split turns into chunks of ~50 turns each
@@ -310,7 +310,9 @@ File: `~/.kiro/session-config.yml`
 ```yaml
 llm:
   provider: auto          # auto | kiro | ollama | openai | none
-  auto_enrich: true       # background Layer 1
+  auto_enrich: true       # auto-enrich unindexed sessions on every startup (background)
+                          # no frequency limits — runs whenever unindexed sessions exist
+                          # set to false to disable; use 'kiro-session index' for manual control
 
 privacy:
   exclude_dirs: []        # directories to skip during indexing
@@ -402,7 +404,7 @@ CREATE TABLE derivations (
 |--------|---------|-----------|
 | Layer 0 incremental | Every startup, auto | Sync, < 500ms |
 | Layer 0 full rebuild | First run or `index --rebuild` | Sync, < 10s |
-| Layer 1 background | 30 min after startup, auto | Background |
+| Layer 1 background | Every startup (if unindexed sessions exist), auto | Background |
 | Layer 1 single session | Detail `[i]` / split on-demand | Sync, 3-10s |
 | Layer 1 manual bulk | `kiro-session index` | Sync |
 | Resume by topic | User selects topic number | Sync, generates temp file |
