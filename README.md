@@ -92,12 +92,14 @@ Topics (3):
   [t] Edit tags
   [v] Save    [d] Delete
   [x] Delete topic
+  [f] Feedback (re-analyze topics)
   [i] Index
   [b] Back    [q] Quit
 ```
 
 - **Resume full** — generates temp JSON, gives `kiro-cli chat` + `/chat load` command
 - **Resume by topic** — cherry-picks only the turns for that topic
+- **Feedback** — provide feedback on topic grouping, LLM re-analyzes with your guidance
 - **Index** — runs LLM enrichment for better names, topics, and tags (~5s)
 - Sessions without LLM index are marked ⚡ in the list
 

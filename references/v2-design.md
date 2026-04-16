@@ -201,6 +201,15 @@ turn_indices: "[0,1,2,11,12]"  -- JSON array, can be non-contiguous
 
 Storage cost: ~hundreds of bytes per session. No source data copied.
 
+### Topic feedback
+
+When topic grouping is unsatisfactory, users can provide feedback via `[f]` in the detail page. The LLM receives:
+- Previous topic grouping (titles + turn indices)
+- User's feedback text (e.g. "merge topics 1 and 3", "Docker topics should be separate")
+- Original conversation excerpt
+
+The LLM re-analyzes and produces updated topics. For large sessions (chunk-analyze-merge), feedback is injected into the merge phase.
+
 ### Resume by topic
 
 1. User selects topic number in detail page
@@ -471,6 +480,7 @@ Topics (3):
   [t] Edit tags
   [v] Save    [d] Delete
   [x] Delete topic
+  [f] Feedback (re-analyze topics)
   [i] Index   ← only when not LLM enriched
   [b] Back    [q] Quit
 ```

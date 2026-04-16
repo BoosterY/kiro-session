@@ -190,6 +190,7 @@ def show_detail(conn, session: dict):
     if topics and all(i in derived_topics for i in range(len(topics))):
         marker = f"  📦 Fully derived ({len(topics)}/{len(topics)} topics)"
 
+    print("\033[2J\033[H", end="")  # clear screen
     print("=" * 60)
     print(f"Session: {s['name']}{marker}")
     print(f"ID:      {sid}")
@@ -218,6 +219,8 @@ def show_detail(conn, session: dict):
         actions.append("  [x] Delete topic")
     if not s.get("llm_enriched"):
         actions.append("  [i] Index")
+    if topics:
+        actions.append("  [f] Feedback (re-analyze topics)")
     actions.append("  [b] Back    [q] Quit")
     print("\n".join(actions))
 
@@ -242,6 +245,9 @@ def show_detail(conn, session: dict):
         elif choice == "i":
             _action_index(conn, sid)
             show_detail(conn, session)  # refresh
+            return
+        elif choice == "f" and topics:
+            _action_feedback(conn, sid, session)
             return
         elif choice == "t":
             _action_edit_tags(conn, s)
@@ -341,6 +347,23 @@ def _action_index(conn, sid: str):
         print("✔ LLM index complete.", file=sys.stderr)
     else:
         print("✘ LLM indexing failed.", file=sys.stderr)
+
+
+def _action_feedback(conn, sid: str, session: dict):
+    print("Current topics will be sent to LLM with your feedback for re-analysis.")
+    print("Feedback: ", end="", flush=True)
+    try:
+        feedback = sys.stdin.buffer.readline().decode("utf-8", errors="replace").strip()
+    except (KeyboardInterrupt, EOFError):
+        return
+    if not feedback:
+        return
+    print("Re-analyzing with feedback...", file=sys.stderr)
+    if splitter.enrich_session(conn, sid, feedback=feedback):
+        print("✔ Re-analysis complete.", file=sys.stderr)
+    else:
+        print("✘ Re-analysis failed.", file=sys.stderr)
+    show_detail(conn, session)
 
 
 def _action_edit_tags(conn, s: dict):
