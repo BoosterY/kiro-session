@@ -1,6 +1,6 @@
 ---
 name: session-manager
-description: "Manage Kiro CLI chat sessions — list, browse, search, split by topic, save/restore, and cleanup. This skill should be used when users want to find previous sessions, browse session history, split a long session into topics, export/import sessions, or clean up stale sessions. Triggers include: 'list sessions', 'find session', 'browse sessions', 'split session', 'session topics', 'save session', 'restore session', 'cleanup sessions', 'session history', 'previous conversation', 'old chat'."
+description: "Manage Kiro CLI chat sessions — list, browse, search, split by topic, save/restore, and cleanup. This skill should be used when users want to find previous sessions, browse session history, split a long session into topics, export/import sessions, clean up stale sessions, or start a private/incognito conversation. Triggers include: 'list sessions', 'find session', 'browse sessions', 'split session', 'session topics', 'save session', 'restore session', 'cleanup sessions', 'session history', 'previous conversation', 'old chat', 'private session', 'incognito', 'private conversation', 'sensitive question', 'don't save this'."
 license: Proprietary
 compatibility: Requires Python 3.10+, pick library, and access to Kiro CLI SQLite database
 runtimes:
@@ -137,6 +137,32 @@ The index tracks:
 ## Compatibility with Native Kiro CLI
 
 This tool coexists with native session management (`--resume`, `--delete-session`, etc.). If sessions are deleted externally, the index self-heals on next access by removing stale entries and fixing orphaned parent/children references.
+
+### private
+
+Start a private/incognito session that is automatically deleted when you exit. No trace is left in kiro DB, JSONL files, or our index.
+
+```bash
+kiro-session private          # start private session
+kiro-session private -a       # with all tools trusted
+```
+
+How it works:
+- Runs kiro-cli in a sandboxed directory (`~/.kiro/skills/session-manager/private/`)
+- On normal exit: session is immediately deleted from all local storage
+- On abnormal exit (window close, crash): cleaned up on next `kiro-session` invocation
+
+**Note:** This only deletes local session data (kiro DB, JSONL files, index). Conversation content sent to the LLM provider during the session may still be retained server-side per the provider's data policies. This feature protects local privacy, not server-side.
+
+**Important:** If a user asks to have a private conversation, ask a sensitive question, or says "don't save this" within an existing chat session, respond with:
+
+> This conversation is already being recorded. To start a private session that won't be saved, please open a new terminal and run:
+> ```
+> kiro-session private
+> ```
+> Everything in that session will be automatically deleted when you exit.
+
+Do NOT attempt to run `kiro-session private` from within an existing kiro chat — the child session's content would be captured in the parent session's tool results, defeating the purpose.
 
 ## In-Chat Usage
 

@@ -5,7 +5,7 @@ SKILL_DIR="$HOME/.kiro/skills/session-manager"
 BIN_DIR="$HOME/.local/bin"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "Installing kiro-session..."
+echo "Installing kiro-session v2..."
 
 # 0. Check dependencies
 MISSING=""
@@ -34,13 +34,18 @@ echo "  ✔ Skill installed to $SKILL_DIR"
 
 # 2. Set up Python venv with dependencies
 VENV_DIR="$SKILL_DIR/.venv"
-if [ -d "$VENV_DIR" ] && "$VENV_DIR/bin/python3" -c "import pick" 2>/dev/null; then
+DEPS_OK=true
+for pkg in pick orjson yaml; do
+    "$VENV_DIR/bin/python3" -c "import $pkg" 2>/dev/null || DEPS_OK=false
+done
+
+if [ "$DEPS_OK" = true ] && [ -d "$VENV_DIR" ]; then
     echo "  ✔ Python venv already set up"
 else
     echo "  Setting up Python venv..."
     python3 -m venv "$VENV_DIR"
-    "$VENV_DIR/bin/pip" install --quiet pick && echo "  ✔ Python venv ready" \
-        || echo "  ⚠ Failed to set up venv. Run: python3 -m venv $VENV_DIR && $VENV_DIR/bin/pip install pick"
+    "$VENV_DIR/bin/pip" install --quiet pick orjson pyyaml && echo "  ✔ Python venv ready" \
+        || echo "  ⚠ Failed to set up venv. Run: python3 -m venv $VENV_DIR && $VENV_DIR/bin/pip install pick orjson pyyaml"
 fi
 
 # 3. Symlink CLI command

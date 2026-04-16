@@ -8,79 +8,53 @@ PY="${VENV_PY:-python3}"
 [ -x "$VENV_PY" ] && PY="$VENV_PY"
 
 # --- Startup checks ---
-INDEX="$HOME/.kiro/session-index.json"
-LOCK="$HOME/.kiro/.index-lock"
+INDEX_DB="$HOME/.kiro/session-index.db"
 
-if [ -f "$INDEX" ]; then
-    python3 -c "
-import json, time, sys
-idx = json.loads(open('$INDEX').read())
-sessions = idx.get('sessions', {})
-n = len(sessions)
-
-# Audit reminder
-last_audit = idx.get('last_audit')
-interval = idx.get('audit_interval_days', 7)
-if last_audit:
-    age = (time.time() - last_audit / 1000) / 86400
-    if age > interval:
-        print(f'\033[33m⚠  Session audit overdue ({int(age)}d since last). Run: kiro-session cleanup\033[0m', file=sys.stderr)
-elif n > 5:
-    print(f'\033[33m⚠  {n} sessions found, never audited. Run: kiro-session cleanup\033[0m', file=sys.stderr)
-
-# Stale session warning (60d+)
+if [ -f "$INDEX_DB" ]; then
+    "$PY" -c "
+import sqlite3, time, sys
+conn = sqlite3.connect('$INDEX_DB')
+try:
+    sessions = conn.execute('SELECT updated_at, user_turn_count FROM sessions').fetchall()
+except:
+    sys.exit(0)
 now = time.time() * 1000
-warn_60d = sum(1 for s in sessions.values()
-    if (now - s.get('updated_at', 0)) / 86400000 > 60
-    and s.get('user_turn_count', 0) <= 1)
-if warn_60d > 0:
-    print(f'\033[33m⚠  {warn_60d} stale session(s) (>60d, ≤1 turn). Run: kiro-session cleanup\033[0m', file=sys.stderr)
-
-# LLM index status
-not_llm = sum(1 for s in sessions.values() if not s.get('llm_indexed'))
-if not_llm > 0 and n > 3:
-    last_llm = idx.get('last_llm_index')
-    if not last_llm or (time.time() - last_llm / 1000) / 86400 > 7:
-        print(f'\033[36mℹ  {not_llm} session(s) without LLM summaries.\033[0m', file=sys.stderr)
-
-# Splittable sessions reminder
-splittable = sum(1 for s in sessions.values()
-    if len(s.get('topics',[])) > 1
-    and isinstance(s.get('topics',[{}])[0].get('turns'), list)
-    and not s.get('children'))
-if splittable > 0:
-    print(f'\033[35m✂  {splittable} session(s) have multiple topics and can be split. Run: kiro-session split\033[0m', file=sys.stderr)
-" 2>&1
+stale = sum(1 for u, tc in sessions if (now - u) / 86400000 > 90 and tc <= 2)
+empty = sum(1 for _, tc in sessions if tc == 0)
+warn = stale + empty
+if warn > 0:
+    print(f'\033[33m⚠  {warn} session(s) suggested for cleanup. Run: kiro-session cleanup\033[0m', file=sys.stderr)
+" 1>&2
 fi
 
-# --- Background auto-index if needed ---
-# Fast check: only consider if lock is absent and last index was >1 day ago
-if [ -f "$INDEX" ] && [ ! -f "$LOCK" ]; then
-    # Use lock mtime as "last attempted" marker — skip if attempted within 24h
-    LAST_ATTEMPT="$HOME/.kiro/.index-last"
-    RUN_INDEX=false
-    if [ ! -f "$LAST_ATTEMPT" ]; then
-        RUN_INDEX=true
-    elif [ "$(find "$LAST_ATTEMPT" -mmin +1440 2>/dev/null)" ]; then
-        RUN_INDEX=true
+# --- Background auto-enrich (Layer 1) ---
+LAST_ENRICH="$HOME/.kiro/.enrich-last"
+if [ -f "$INDEX_DB" ]; then
+    RUN_ENRICH=false
+    if [ ! -f "$LAST_ENRICH" ]; then
+        RUN_ENRICH=true
+    elif [ "$(find "$LAST_ENRICH" -mmin +1440 2>/dev/null)" ]; then
+        RUN_ENRICH=true
     fi
 
-    if [ "$RUN_INDEX" = true ]; then
-        touch "$LAST_ATTEMPT"
-        echo "waiting" > "$LOCK"
-        (
-            # Delay 30 minutes to avoid competing with user's active work
-            sleep 1800
-            # Check if lock was cancelled by manual index
-            [ -f "$LOCK" ] || exit 0
-            echo "active" > "$LOCK"
-            "$PY" "$SCRIPT_DIR/scripts/kiro_session.py" index >/dev/null 2>&1
-            rm -f "$LOCK"
-        ) &
-        disown
+    if [ "$RUN_ENRICH" = true ]; then
+        # Check config: auto_enrich enabled?
+        AUTO=$("$PY" -c "
+import sys; sys.path.insert(0, '$SCRIPT_DIR/scripts')
+from config import load_config, get
+print('yes' if get(load_config(), 'llm.auto_enrich') else 'no')
+" 2>/dev/null)
+
+        if [ "$AUTO" = "yes" ]; then
+            touch "$LAST_ENRICH"
+            (
+                sleep 1800  # 30 min delay
+                "$PY" "$SCRIPT_DIR/scripts/kiro_session.py" index >/dev/null 2>&1
+            ) &
+            disown
+        fi
     fi
 fi
 
 # --- Run main script ---
-exec "$PY" "$SCRIPT_DIR/scripts/kiro_session.py" "$@" \
-  || exec python3 "$HOME/.kiro/skills/session-manager/scripts/kiro_session.py" "$@"
+exec "$PY" "$SCRIPT_DIR/scripts/kiro_session.py" "$@"

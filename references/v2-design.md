@@ -19,7 +19,11 @@ Shared interface: kiro-session's index SQLite.
 
 ## Data Source
 
-kiro-cli SQLite DB (`~/.local/share/kiro-cli/data.sqlite3`), read-only.
+kiro-cli has **two session storage backends**:
+
+### Storage 1: SQLite DB (legacy, labeled "v1" in kiro-cli)
+
+`~/.local/share/kiro-cli/data.sqlite3`, read-only.
 
 Table `conversations_v2`:
 - `key` — working directory
@@ -32,6 +36,26 @@ Table `conversations_v2`:
 - `updated_at` — timestamp for change detection
 
 All sessions across all directories are in this single table.
+
+### Storage 2: JSON + JSONL files (new, labeled "v2" in kiro-cli)
+
+`~/.kiro/sessions/cli/`, read-only.
+
+Each session has two files:
+- `<session-id>.json` — metadata:
+  - `session_id` — unique ID
+  - `cwd` — working directory
+  - `created_at`, `updated_at` — ISO timestamps
+  - `title` — session title
+  - `session_state` — internal state dict
+- `<session-id>.jsonl` — conversation events, one per line:
+  - `kind: "Prompt"` — user message, `data.content[].data` = text
+  - `kind: "AssistantMessage"` — assistant response
+  - `kind: "ToolResults"` — tool execution results
+
+### Extractor must read both storages
+
+Layer 0 scans both sources and merges into a unified index. Session IDs are unique across both storages. If a session exists in both (migration scenario), prefer the newer `updated_at`.
 
 ## Index Layers
 
