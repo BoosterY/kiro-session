@@ -207,15 +207,15 @@ def generate_topic_file(conn, sid: str, topic_index: int) -> Path | None:
         return None
 
     new_id = str(uuid.uuid4())
-    new_session = {
-        "conversation_id": new_id,
-        "history": picked,
-        "transcript": [],
-        "_kiro_session_source": {
-            "source_id": sid,
-            "topic_index": topic_index,
-            "topic_title": topic.get("title", ""),
-        },
+    # Preserve original session structure for kiro-cli compatibility
+    new_session = dict(data)
+    new_session["conversation_id"] = new_id
+    new_session["history"] = picked
+    new_session["transcript"] = []
+    new_session["_kiro_session_source"] = {
+        "source_id": sid,
+        "topic_index": topic_index,
+        "topic_title": topic.get("title", ""),
     }
 
     TMP_DIR.mkdir(parents=True, exist_ok=True)
