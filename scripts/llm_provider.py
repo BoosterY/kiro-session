@@ -24,65 +24,42 @@ class KiroProvider(LLMProvider):
         return shutil.which("kiro-cli") is not None
 
     def query(self, prompt: str, timeout: int = 60) -> str | None:
+        import uuid
+        marker = f"__ks_{uuid.uuid4().hex[:12]}__"
+        tagged_prompt = f"{prompt}\n\n[internal-marker: {marker}]"
         try:
             result = subprocess.run(
-                ["kiro-cli", "chat", "--no-interactive", prompt],
+                ["kiro-cli", "chat", "--no-interactive", tagged_prompt],
                 capture_output=True, text=True, timeout=timeout,
                 stdin=subprocess.DEVNULL,
             )
             if result.returncode != 0:
                 return None
-            # Strip ANSI codes
             import re
             text = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
-            # Clean up the garbage session kiro-cli just created
-            self._cleanup_garbage(prompt)
+            self._cleanup_by_marker(marker)
             return text.strip() or None
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return None
 
     @staticmethod
-    def _cleanup_garbage(prompt: str):
-        """Delete the session kiro-cli created for this headless call."""
-        marker = prompt[:80]
+    def _cleanup_by_marker(marker: str):
+        """Delete the session containing our unique marker."""
         try:
-            # Check SQLite
             import sqlite3
             from pathlib import Path
             db = Path.home() / ".local" / "share" / "kiro-cli" / "data.sqlite3"
             conn = sqlite3.connect(str(db), timeout=5)
             rows = conn.execute(
-                "SELECT conversation_id, value FROM conversations_v2 ORDER BY updated_at DESC LIMIT 5"
+                "SELECT conversation_id, value FROM conversations_v2 WHERE value LIKE ?",
+                (f"%{marker}%",)
             ).fetchall()
-            for cid, val in rows:
-                if marker in val:
-                    subprocess.run(
-                        ["kiro-cli", "chat", "--delete-session", cid],
-                        capture_output=True, timeout=10,
-                    )
-                    return
             conn.close()
-        except Exception:
-            pass
-        try:
-            # Check JSONL files
-            from pathlib import Path
-            sessions_dir = Path.home() / ".kiro" / "sessions" / "cli"
-            if not sessions_dir.exists():
-                return
-            import json as _json
-            # Check most recent JSONL files
-            jsonl_files = sorted(sessions_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)[:5]
-            for jf in jsonl_files:
-                with open(jf) as f:
-                    first_line = f.readline()
-                if marker in first_line:
-                    sid = jf.stem
-                    subprocess.run(
-                        ["kiro-cli", "chat", "--delete-session", sid],
-                        capture_output=True, timeout=10,
-                    )
-                    return
+            for cid, _ in rows:
+                subprocess.run(
+                    ["kiro-cli", "chat", "--delete-session", cid],
+                    capture_output=True, timeout=10,
+                )
         except Exception:
             pass
 
