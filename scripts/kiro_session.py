@@ -98,10 +98,10 @@ def main():
     p_private.add_argument("extra", nargs="*", help="Extra args passed to kiro-cli")
 
     # resume
-    p_resume = sub.add_parser("resume", help="Quick resume a session by ID")
+    p_resume = sub.add_parser("resume", help="Resume a session by ID")
     p_resume.add_argument("session_id")
     p_resume.add_argument("--topic", type=int, default=None, help="Resume specific topic")
-    p_resume.add_argument("--go", action="store_true", help="Launch kiro-cli and auto-load session")
+    p_resume.add_argument("--print", action="store_true", dest="print_only", help="Only print instructions (don't launch kiro-cli)")
 
     # rename
     p_rename = sub.add_parser("rename", help="Rename a session")
@@ -547,10 +547,11 @@ def cmd_resume(conn, args):
         print("Session not found.", file=sys.stderr)
         return
     tools = idx.get_all_tools_used(conn, s["id"])
+    go = not args.print_only
     if args.topic is not None:
-        ui._action_resume_topic(conn, s, args.topic, tools)
+        ui._action_resume_topic(conn, s, args.topic, tools, go=go)
     else:
-        ui._action_resume(conn, s, tools, go=args.go)
+        ui._action_resume(conn, s, tools, go=go)
 
 
 def cmd_context(conn, args):

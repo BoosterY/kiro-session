@@ -210,7 +210,7 @@ def show_detail(conn, session: dict):
     print("=" * 60)
 
     # Actions
-    actions = ["\n  [r] Resume (show instructions)  [g] Go (launch kiro-cli)"]
+    actions = ["\n  [r] Resume full session"]
     if len(topics) > 1:
         actions.append(f"  [1-{len(topics)}] Resume by topic")
     actions.append("  [t] Edit tags")
@@ -236,8 +236,6 @@ def show_detail(conn, session: dict):
         elif choice == "b":
             return
         elif choice == "r":
-            _action_resume(conn, s, tools)
-        elif choice == "g":
             _action_resume(conn, s, tools, go=True)
         elif choice == "v":
             _action_save(conn, s)
@@ -261,7 +259,7 @@ def show_detail(conn, session: dict):
         elif choice.isdigit() and len(topics) > 1:
             ti = int(choice) - 1
             if 0 <= ti < len(topics):
-                _action_resume_topic(conn, s, ti, tools)
+                _action_resume_topic(conn, s, ti, tools, go=True)
         else:
             print("Unknown action.", file=sys.stderr)
 
@@ -293,21 +291,29 @@ def _action_resume(conn, s: dict, tools: list[str], go: bool = False):
     print(f"\nResume in terminal:")
     print(f"  cd {directory} && kiro-cli chat{trust_flag}")
     print(f"  Then: /chat load {tmp_path}")
-    print(f"\n  Or one step: kiro-session resume {s['id'][:8]} --go")
     print()
 
 
-def _action_resume_topic(conn, s: dict, topic_index: int, tools: list[str]):
+def _action_resume_topic(conn, s: dict, topic_index: int, tools: list[str], go: bool = False):
     path = splitter.generate_topic_file(conn, s["id"], topic_index)
     if not path:
         print("Failed to generate topic file.", file=sys.stderr)
         return
     topics = idx.get_topics(conn, s["id"])
     title = topics[topic_index]["title"] if topic_index < len(topics) else "?"
-    trust = f" --trust-tools={','.join(tools)}" if tools else ""
+    directory = s.get("directory", "~")
+    trust = ",".join(tools) if tools else ""
+
     print(f"\nTopic '{title}' ready.")
+
+    if go:
+        from launcher import launch_kiro_resume
+        launch_kiro_resume(directory, str(path), trust)
+        return
+
+    trust_flag = f" --trust-tools={trust}" if trust else ""
     print(f"Resume in terminal:")
-    print(f"  cd {s.get('directory', '~')} && kiro-cli chat{trust}")
+    print(f"  cd {directory} && kiro-cli chat{trust_flag}")
     print(f"  Then: /chat load {path}")
     print()
 
