@@ -670,6 +670,44 @@ The LLM in the active conversation parses the JSON and presents results in natur
 
 ## TODO
 
+### Provider 抽象层（Future Architecture）
+
+当前架构对 kiro-cli 有硬耦合。如果要支持其他 AI CLI 工具（Claude Code、Cursor、Copilot Chat 等），需要抽象 provider 接口。
+
+耦合点分析：
+
+| 耦合点 | 当前实现 | 抽象后 |
+|--------|---------|--------|
+| 数据读取 | 直接读 kiro SQLite + JSONL | `provider.list_sessions()` / `provider.read_session(id)` |
+| 数据删除 | `kiro-cli chat --delete-session` | `provider.delete_session(id)` |
+| LLM 调用 | `kiro-cli chat --no-interactive` | `llm_provider.query()` (已部分抽象) |
+| Resume | 生成 kiro 格式 JSON + `/chat load` | `provider.generate_resume(id, turns)` |
+| Private | 依赖 kiro cwd-based 存储 | `provider.start_private()` / `provider.cleanup_private()` |
+
+目标接口：
+
+```python
+class SessionProvider(ABC):
+    """Abstract interface for AI CLI session storage."""
+    def list_sessions(self) -> list[dict]:
+        """Return [{id, directory, updated_at, ...}]"""
+    def read_session(self, sid: str) -> dict | None:
+        """Return {history: [...], ...} in normalized format"""
+    def delete_session(self, sid: str) -> bool:
+        """Delete session from tool's storage"""
+    def generate_resume_file(self, sid: str, turn_indices: list[int] | None = None) -> Path | None:
+        """Generate loadable file for the tool. None = all turns."""
+    def resume_instructions(self, sid: str, path: Path) -> str:
+        """Return human-readable resume command for the tool"""
+```
+
+当前 `extractor.py` 是事实上的 KiroProvider，`llm_provider.py` 已经有 provider 抽象。重构时只需：
+1. 从 `extractor.py` 提取 `KiroProvider` 实现
+2. index_store / searcher / splitter / ui 只依赖 `SessionProvider` 接口
+3. 新工具只需实现 `SessionProvider`，其余代码复用
+
+暂不实施 — 等真正需要支持第二个工具时再抽象，避免提前优化。
+
 ### Picker 内搜索
 
 当前 picker 只支持上下导航，不支持搜索。计划加两种：
