@@ -679,6 +679,14 @@ The LLM in the active conversation parses the JSON and presents results in natur
 
 FTS 已索引全部对话全文（当前 5000+ 条），零 token 消耗。
 
+### 垃圾 session 清理
+
+`--no-interactive` headless 模式（LLM enrichment 调用）产生的垃圾 session 全部存在 v1 SQLite 里。当前 `_cleanup_garbage` 只匹配最近 5 个 session，历史积累的垃圾没清。需要：
+
+1. 启动时扫描所有 v1 session，识别 headless 垃圾（prompt 包含 `Analyze this conversation` / `Merge these topic groups` / `return ONLY a JSON` 等 marker）
+2. 自动删除，不需要用户确认（这些 session 对用户无价值）
+3. 或者改进 `_cleanup_garbage` 使其在每次 LLM 调用后更可靠地清理（当前依赖 prompt 前 80 字符匹配，多窗口场景可能漏删）
+
 ## Key Changes from v0.3.0
 
 | Aspect | v0.3.0 | v2 |
