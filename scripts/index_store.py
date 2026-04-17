@@ -11,6 +11,7 @@ PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     name TEXT,
+    user_name TEXT,
     directory TEXT,
     created_at INTEGER,
     updated_at INTEGER,
@@ -90,6 +91,11 @@ def connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     conn.executescript(FTS_SCHEMA)
+    # Migrations
+    try:
+        conn.execute("ALTER TABLE sessions ADD COLUMN user_name TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
     return conn
 
 
@@ -108,11 +114,20 @@ def upsert_session(conn: sqlite3.Connection, sid: str, **fields):
 
 def get_session(conn: sqlite3.Connection, sid: str) -> dict | None:
     row = conn.execute("SELECT * FROM sessions WHERE id = ?", (sid,)).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    d = dict(row)
+    if d.get("user_name"):
+        d["name"] = d["user_name"]
+    return d
 
 
 def get_all_sessions(conn: sqlite3.Connection) -> list[dict]:
-    return [dict(r) for r in conn.execute("SELECT * FROM sessions ORDER BY updated_at DESC")]
+    rows = [dict(r) for r in conn.execute("SELECT * FROM sessions ORDER BY updated_at DESC")]
+    for d in rows:
+        if d.get("user_name"):
+            d["name"] = d["user_name"]
+    return rows
 
 
 def get_session_ids(conn: sqlite3.Connection) -> set[str]:
@@ -227,6 +242,10 @@ def get_derivations_for_source(conn: sqlite3.Connection, source_id: str) -> list
 
 def update_user_tags(conn: sqlite3.Connection, sid: str, tags: list[str]):
     conn.execute("UPDATE sessions SET user_tags = ? WHERE id = ?", (json.dumps(tags), sid))
+
+
+def update_session_name(conn: sqlite3.Connection, sid: str, name: str):
+    conn.execute("UPDATE sessions SET user_name = ? WHERE id = ?", (name, sid))
 
 
 def get_all_tools_used(conn: sqlite3.Connection, sid: str) -> list[str]:

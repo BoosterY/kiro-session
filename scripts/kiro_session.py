@@ -48,6 +48,11 @@ def main():
     p_index = sub.add_parser("index", help="Build/rebuild LLM index")
     p_index.add_argument("--rebuild", action="store_true")
 
+    # export
+    p_export = sub.add_parser("export", help="Export session as Markdown")
+    p_export.add_argument("session_id")
+    p_export.add_argument("path", nargs="?")
+
     # save
     p_save = sub.add_parser("save", help="Export session to JSON")
     p_save.add_argument("session_id")
@@ -97,6 +102,16 @@ def main():
     p_resume.add_argument("session_id")
     p_resume.add_argument("--topic", type=int, default=None, help="Resume specific topic")
 
+    # rename
+    p_rename = sub.add_parser("rename", help="Rename a session")
+    p_rename.add_argument("session_id")
+    p_rename.add_argument("name")
+
+    # context
+    p_ctx = sub.add_parser("context", help="Generate context summary for /context add")
+    p_ctx.add_argument("session_id")
+    p_ctx.add_argument("--topic", type=int, default=None, help="Only summarize a specific topic")
+
     args = parser.parse_args()
     # Propagate --json to args if not set by subparser
     if not hasattr(args, 'json'):
@@ -117,6 +132,8 @@ def main():
         cmd_index(conn, args)
     elif cmd == "save":
         cmd_save(conn, args)
+    elif cmd == "export":
+        cmd_export(conn, args)
     elif cmd == "restore":
         cmd_restore(args)
     elif cmd == "delete":
@@ -136,6 +153,10 @@ def main():
         return  # skip conn.close etc
     elif cmd == "resume":
         cmd_resume(conn, args)
+    elif cmd == "rename":
+        cmd_rename(conn, args)
+    elif cmd == "context":
+        cmd_context(conn, args)
 
 
 def _progress(i, total):
@@ -255,6 +276,120 @@ def cmd_save(conn, args):
     with open(path, "w") as f:
         json.dump(data, f, ensure_ascii=False)
     print(f"✔ Saved to {path}")
+
+
+def cmd_export(conn, args):
+    s = _resolve_session(conn, args.session_id)
+    if not s:
+        return
+    data = extractor.read_session_data(s["id"])
+    if not data:
+        print("Session not found.", file=sys.stderr)
+        return
+
+    turns = _extract_md_turns(data)
+    name = s.get("name") or "(unnamed)"
+    directory = s.get("directory") or data.get("_meta", {}).get("cwd", "?")
+    updated = s.get("updated_at", 0)
+    from datetime import datetime
+    date_str = datetime.fromtimestamp(updated / 1000).strftime("%Y-%m-%d %H:%M") if updated else "?"
+
+    lines = [
+        f"# Session: {name}",
+        f"- ID: {s['id']}",
+        f"- Directory: {directory}",
+        f"- Date: {date_str}",
+        f"- Turns: {len(turns)}",
+        "",
+    ]
+    for role, text in turns:
+        lines.append("---")
+        lines.append("")
+        lines.append(f"## {role}")
+        lines.append(text)
+        lines.append("")
+
+    md = "\n".join(lines)
+    slug = (s.get("name") or "session").replace(" ", "_").replace("/", "_")[:50]
+    path = args.path or f"session-{slug}.md"
+    with open(path, "w") as f:
+        f.write(md)
+    print(f"✔ Exported to {path}")
+
+
+def _extract_md_turns(data: dict) -> list[tuple[str, str]]:
+    """Extract (role, text) pairs from session data (v1 or v2)."""
+    if data.get("_source") == "jsonl":
+        return _extract_md_turns_v2(data)
+    return _extract_md_turns_v1(data)
+
+
+def _extract_md_turns_v1(data: dict) -> list[tuple[str, str]]:
+    turns = []
+    for entry in data.get("history", []):
+        user = entry.get("user", {})
+        assistant = entry.get("assistant", {})
+
+        # User prompt
+        content = user.get("content", {})
+        prompt = ""
+        if isinstance(content, dict):
+            p = content.get("Prompt", "")
+            prompt = p.get("prompt", "") if isinstance(p, dict) else (p if isinstance(p, str) else "")
+        elif isinstance(content, str):
+            prompt = content
+        if prompt:
+            turns.append(("User", prompt))
+
+        # Assistant
+        if isinstance(assistant, dict):
+            resp = assistant.get("Response", {})
+            if isinstance(resp, dict) and resp.get("value"):
+                turns.append(("Assistant", resp["value"]))
+            elif isinstance(resp, str) and resp:
+                turns.append(("Assistant", resp))
+
+            tool_use = assistant.get("ToolUse", {})
+            if isinstance(tool_use, dict) and tool_use.get("tool_uses"):
+                tools = [tu.get("name", "?") for tu in tool_use["tool_uses"]]
+                text = tool_use.get("text", "")
+                parts = []
+                if text:
+                    parts.append(text)
+                parts.append(f"*Tools used: {', '.join(tools)}*")
+                turns.append(("Assistant", "\n\n".join(parts)))
+    return turns
+
+
+def _extract_md_turns_v2(data: dict) -> list[tuple[str, str]]:
+    turns = []
+    for entry in data.get("history", []):
+        kind = entry.get("kind")
+        d = entry.get("data", {})
+
+        if kind == "Prompt":
+            for c in d.get("content", []):
+                if c.get("kind") == "text":
+                    turns.append(("User", c.get("data", "")))
+                    break
+
+        elif kind == "AssistantMessage":
+            text_parts = []
+            tools = []
+            for c in d.get("content", []):
+                ck = c.get("kind", "")
+                if ck == "text":
+                    text_parts.append(c.get("data", ""))
+                elif ck == "toolUse":
+                    tools.append(c.get("data", {}).get("name", "?"))
+            parts = []
+            if text_parts:
+                parts.append("".join(text_parts))
+            if tools:
+                parts.append(f"*Tools used: {', '.join(tools)}*")
+            if parts:
+                turns.append(("Assistant", "\n\n".join(parts)))
+    return turns
 
 
 def cmd_restore(args):
@@ -415,6 +550,105 @@ def cmd_resume(conn, args):
         ui._action_resume_topic(conn, s, args.topic, tools)
     else:
         ui._action_resume(conn, s, tools)
+
+
+def cmd_context(conn, args):
+    """Generate a context summary file from a session or topic for /context add."""
+    s = _resolve_session(conn, args.session_id)
+    if not s:
+        return
+
+    sid = s["id"]
+
+    # Get turns — filter by topic if specified
+    if args.topic is not None:
+        topics = idx.get_topics(conn, sid)
+        if not topics or args.topic >= len(topics):
+            print(f"Topic {args.topic} not found. Run 'kiro-session index' first.", file=sys.stderr)
+            return
+        topic = topics[args.topic]
+        indices = json.loads(topic["turn_indices"]) if isinstance(topic["turn_indices"], str) else topic["turn_indices"]
+        turns = conn.execute(
+            "SELECT turn_index, user_prompt, assistant_response FROM turns WHERE session_id = ? ORDER BY turn_index",
+            (sid,),
+        ).fetchall()
+        turns = [t for t in turns if t[0] in indices]
+        title = f"Topic: {topic.get('title', f'#{args.topic}')}"
+    else:
+        turns = conn.execute(
+            "SELECT turn_index, user_prompt, assistant_response FROM turns WHERE session_id = ? ORDER BY turn_index",
+            (sid,),
+        ).fetchall()
+        title = s.get("name", sid[:8])
+
+    if not turns:
+        print("No turns found.", file=sys.stderr)
+        return
+
+    # Try LLM summary first, fall back to extraction
+    summary = _context_summary_llm(turns, title)
+    if not summary:
+        summary = _context_summary_extract(turns, title, s)
+
+    # Save
+    TMP_DIR = Path.home() / ".kiro" / "tmp"
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = f"-topic-{args.topic}" if args.topic is not None else ""
+    out_path = TMP_DIR / f"{sid[:8]}{suffix}-context.md"
+    with open(out_path, "w") as f:
+        f.write(summary)
+
+    print(f"✔ Context saved to {out_path}")
+    print(f"\n  /context add {out_path}")
+
+
+def _context_summary_llm(turns, title: str) -> str | None:
+    """Try to generate a summary using LLM. Returns None if unavailable."""
+    provider = get_provider()
+    if provider.name == "NoneProvider":
+        return None
+
+    excerpt = "\n".join(
+        f"[User] {t[1][:300]}\n[Assistant] {(t[2] or '')[:300]}" for t in turns if t[1]
+    )
+    prompt = (
+        "Summarize this conversation into a concise context document. Include:\n"
+        "- Key decisions and conclusions\n"
+        "- Important code snippets or commands\n"
+        "- Technical context that would help continue this work\n"
+        "Format as Markdown. Be concise.\n\n"
+        f"Title: {title}\n\n{excerpt}"
+    )
+    response = provider.query(prompt, timeout=60)
+    if not response:
+        return None
+    return f"# Context: {title}\n\n{response}\n"
+
+
+def _context_summary_extract(turns, title: str, session: dict) -> str:
+    """Extract-based summary (no LLM). Bullet points of prompts + truncated responses."""
+    lines = [f"# Context: {title}\n"]
+    lines.append(f"Source: session {session['id'][:8]} ({session.get('directory', '?')})\n")
+
+    for t in turns:
+        prompt = (t[1] or "").strip()
+        response = (t[2] or "").strip()[:200]
+        if not prompt:
+            continue
+        lines.append(f"- **Q**: {prompt[:200]}")
+        if response:
+            lines.append(f"  **A**: {response}")
+
+    return "\n".join(lines) + "\n"
+
+
+def cmd_rename(conn, args):
+    s = _resolve_session(conn, args.session_id)
+    if not s:
+        return
+    idx.update_session_name(conn, s["id"], args.name)
+    conn.commit()
+    print(f"✔ Renamed {s['id'][:8]} → {args.name}")
 
 
 def cmd_config(args):
