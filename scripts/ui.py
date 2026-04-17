@@ -264,9 +264,9 @@ def show_detail(conn, session: dict):
             print("Unknown action.", file=sys.stderr)
 
 
-def _action_resume(conn, s: dict, tools: list[str]):
+def _action_resume(conn, s: dict, tools: list[str], go: bool = False):
     directory = s.get("directory", "~")
-    trust = f" --trust-tools={','.join(tools)}" if tools else ""
+    trust = ",".join(tools) if tools else ""
 
     # Generate temp file with full session for reliable resume
     from extractor import read_session_data
@@ -282,12 +282,16 @@ def _action_resume(conn, s: dict, tools: list[str]):
     with open(tmp_path, "w") as f:
         _json.dump(data, f, ensure_ascii=False)
 
+    if go:
+        from launcher import launch_kiro_resume
+        launch_kiro_resume(directory, str(tmp_path), trust)
+        return  # unreachable — launch_kiro_resume calls sys.exit
+
+    trust_flag = f" --trust-tools={trust}" if trust else ""
     print(f"\nResume in terminal:")
-    print(f"  cd {directory} && kiro-cli chat{trust}")
+    print(f"  cd {directory} && kiro-cli chat{trust_flag}")
     print(f"  Then: /chat load {tmp_path}")
-    print(f"\n  Note: This creates a new session with the loaded history.")
-    print(f"  Original session remains unchanged.")
-    print(f"  To delete original: kiro-session delete {s['id'][:8]}")
+    print(f"\n  Or one step: kiro-session resume {s['id'][:8]} --go")
     print()
 
 

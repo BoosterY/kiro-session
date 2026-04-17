@@ -101,6 +101,7 @@ def main():
     p_resume = sub.add_parser("resume", help="Quick resume a session by ID")
     p_resume.add_argument("session_id")
     p_resume.add_argument("--topic", type=int, default=None, help="Resume specific topic")
+    p_resume.add_argument("--go", action="store_true", help="Launch kiro-cli and auto-load session")
 
     # rename
     p_rename = sub.add_parser("rename", help="Rename a session")
@@ -344,15 +345,15 @@ def _extract_md_turns_v1(data: dict) -> list[tuple[str, str]]:
         # Assistant
         if isinstance(assistant, dict):
             resp = assistant.get("Response", {})
-            if isinstance(resp, dict) and resp.get("value"):
-                turns.append(("Assistant", resp["value"]))
+            if isinstance(resp, dict) and (resp.get("content") or resp.get("value")):
+                turns.append(("Assistant", resp.get("content", "") or resp.get("value", "")))
             elif isinstance(resp, str) and resp:
                 turns.append(("Assistant", resp))
 
             tool_use = assistant.get("ToolUse", {})
             if isinstance(tool_use, dict) and tool_use.get("tool_uses"):
                 tools = [tu.get("name", "?") for tu in tool_use["tool_uses"]]
-                text = tool_use.get("text", "")
+                text = tool_use.get("content", "") or tool_use.get("text", "")
                 parts = []
                 if text:
                     parts.append(text)
@@ -549,7 +550,7 @@ def cmd_resume(conn, args):
     if args.topic is not None:
         ui._action_resume_topic(conn, s, args.topic, tools)
     else:
-        ui._action_resume(conn, s, tools)
+        ui._action_resume(conn, s, tools, go=args.go)
 
 
 def cmd_context(conn, args):
