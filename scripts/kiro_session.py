@@ -92,6 +92,11 @@ def main():
     p_private.add_argument("--trust-all-tools", "-a", action="store_true")
     p_private.add_argument("extra", nargs="*", help="Extra args passed to kiro-cli")
 
+    # resume
+    p_resume = sub.add_parser("resume", help="Quick resume a session by ID")
+    p_resume.add_argument("session_id")
+    p_resume.add_argument("--topic", type=int, default=None, help="Resume specific topic")
+
     args = parser.parse_args()
     # Propagate --json to args if not set by subparser
     if not hasattr(args, 'json'):
@@ -129,6 +134,8 @@ def main():
     elif cmd == "private":
         cmd_private(args)
         return  # skip conn.close etc
+    elif cmd == "resume":
+        cmd_resume(conn, args)
 
 
 def _progress(i, total):
@@ -396,6 +403,18 @@ def cmd_redact(conn, args):
     idx.optimize_fts(conn)
     conn.commit()
     print(f"✔ Redacted turn {turn} from index for session {s['id'][:8]}.")
+
+
+def cmd_resume(conn, args):
+    s = _resolve_session(conn, args.session_id)
+    if not s:
+        print("Session not found.", file=sys.stderr)
+        return
+    tools = idx.get_all_tools_used(conn, s["id"])
+    if args.topic is not None:
+        ui._action_resume_topic(conn, s, args.topic, tools)
+    else:
+        ui._action_resume(conn, s, tools)
 
 
 def cmd_config(args):
