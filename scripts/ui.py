@@ -284,8 +284,9 @@ def _action_resume(conn, s: dict, tools: list[str], go: bool = False):
 
     if go:
         from launcher import launch_kiro_resume
-        launch_kiro_resume(directory, str(tmp_path), trust)
-        return  # unreachable — launch_kiro_resume calls sys.exit
+        launched = launch_kiro_resume(directory, str(tmp_path), trust)
+        if launched is not False:
+            return  # unreachable — launch_kiro_resume calls sys.exit
 
     trust_flag = f" --trust-tools={trust}" if trust else ""
     print(f"\nResume in terminal:")
@@ -308,8 +309,9 @@ def _action_resume_topic(conn, s: dict, topic_index: int, tools: list[str], go: 
 
     if go:
         from launcher import launch_kiro_resume
-        launch_kiro_resume(directory, str(path), trust)
-        return
+        launched = launch_kiro_resume(directory, str(path), trust)
+        if launched is not False:
+            return
 
     trust_flag = f" --trust-tools={trust}" if trust else ""
     print(f"Resume in terminal:")

@@ -14,8 +14,8 @@ import time
 def launch_kiro_resume(cwd: str, load_path: str, trust_tools: str = "", delay: float = 2.5):
     """Spawn kiro-cli chat in a PTY, inject /chat load after delay, hand off to user."""
     if not sys.stdin.isatty():
-        print("Error: --go requires an interactive terminal.", file=sys.stderr)
-        sys.exit(1)
+        # No TTY — caller should fall back to print mode
+        return False
 
     cmd = ["kiro-cli", "chat"]
     if trust_tools:
