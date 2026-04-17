@@ -22,10 +22,21 @@ KIRO_SESSIONS_DIR = Path.home() / ".kiro" / "sessions" / "cli"
 
 # Normalization for FTS: replace hyphens/underscores with spaces
 _NORM_RE = re.compile(r"[-_./]")
+_CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]+")
+
+try:
+    import jieba
+    jieba.setLogLevel(jieba.logging.WARNING)
+    _HAS_JIEBA = True
+except ImportError:
+    _HAS_JIEBA = False
 
 
 def normalize_text(text: str) -> str:
-    return _NORM_RE.sub(" ", text)
+    text = _NORM_RE.sub(" ", text)
+    if _HAS_JIEBA and _CJK_RE.search(text):
+        text = " ".join(jieba.cut(text))
+    return text
 
 
 def kiro_connect() -> sqlite3.Connection:
