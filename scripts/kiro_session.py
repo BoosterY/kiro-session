@@ -49,9 +49,10 @@ def main():
     p_index.add_argument("--rebuild", action="store_true")
 
     # export
-    p_export = sub.add_parser("export", help="Export session as Markdown")
-    p_export.add_argument("session_id")
-    p_export.add_argument("path", nargs="?")
+    p_export = sub.add_parser("export", help="Export session(s) as Markdown")
+    p_export.add_argument("--all", action="store_true", dest="export_all", help="Export all sessions")
+    p_export.add_argument("--dir", dest="export_dir", default=None, help="Output directory")
+    p_export.add_argument("session_ids", nargs="*")
 
     # save
     p_save = sub.add_parser("save", help="Export session to JSON")
@@ -63,8 +64,8 @@ def main():
     p_restore.add_argument("path")
 
     # delete
-    p_delete = sub.add_parser("delete", help="Delete session")
-    p_delete.add_argument("session_id")
+    p_delete = sub.add_parser("delete", help="Delete session(s)")
+    p_delete.add_argument("session_ids", nargs="+")
 
     # delete-topic
     p_dtopic = sub.add_parser("delete-topic", help="Delete a topic from session")
@@ -74,6 +75,7 @@ def main():
     # tag
     p_tag = sub.add_parser("tag", help="Add/remove user tags")
     p_tag.add_argument("--json", action="store_true")
+    p_tag.add_argument("--batch", action="store_true", help="Batch mode: multiple IDs then tags")
     p_tag.add_argument("session_id")
     p_tag.add_argument("tags", nargs="*")
     p_tag.add_argument("--remove", default="")
@@ -279,12 +281,34 @@ def cmd_save(conn, args):
 
 
 def cmd_export(conn, args):
-    s = _resolve_session(conn, args.session_id)
-    if not s:
+    if args.export_all:
+        sessions = idx.get_all_sessions(conn)
+    elif args.session_ids:
+        sessions = []
+        for sid in args.session_ids:
+            s = _resolve_session(conn, sid)
+            if not s:
+                return
+            sessions.append(s)
+    else:
+        print("Provide session ID(s) or --all.", file=sys.stderr)
         return
+
+    out_dir = Path(args.export_dir) if args.export_dir else None
+    if out_dir:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    for s in sessions:
+        _export_one(conn, s, out_dir)
+
+    if len(sessions) > 1:
+        print(f"✔ Exported {len(sessions)} session(s).")
+
+
+def _export_one(conn, s: dict, out_dir: Path | None):
     data = extractor.read_session_data(s["id"])
     if not data:
-        print("Session not found.", file=sys.stderr)
+        print(f"Session {s['id'][:8]} not found.", file=sys.stderr)
         return
 
     turns = _extract_md_turns(data)
@@ -311,7 +335,7 @@ def cmd_export(conn, args):
 
     md = "\n".join(lines)
     slug = (s.get("name") or "session").replace(" ", "_").replace("/", "_")[:50]
-    path = args.path or f"session-{slug}.md"
+    path = (out_dir / f"session-{slug}.md") if out_dir else Path(f"session-{slug}.md")
     with open(path, "w") as f:
         f.write(md)
     print(f"✔ Exported to {path}")
@@ -402,22 +426,17 @@ def cmd_restore(args):
 
 
 def cmd_delete(conn, args):
-    s = _resolve_session(conn, args.session_id)
-    if not s:
-        return
-    confirm = input(f"Delete '{s['name']}'? This removes from kiro DB. [y/N] ").strip().lower()
+    sessions = []
+    for sid in args.session_ids:
+        s = _resolve_session(conn, sid)
+        if not s:
+            return
+        sessions.append(s)
+    names = "\n".join(f"  {s['id'][:8]}  {s.get('name', '?')}" for s in sessions)
+    confirm = input(f"Delete {len(sessions)} session(s)?\n{names}\n[y/N] ").strip().lower()
     if confirm != "y":
         return
-    import subprocess
-    result = subprocess.run(["kiro-cli", "chat", "--delete-session", s["id"]],
-                            capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Failed: {result.stderr}", file=sys.stderr)
-        return
-    idx.delete_session(conn, s["id"])
-    idx.optimize_fts(conn)
-    conn.commit()
-    print(f"✔ Deleted {s['id'][:8]}")
+    _batch_delete(conn, sessions)
 
 
 def cmd_delete_topic(conn, args):
@@ -437,6 +456,33 @@ def cmd_delete_topic(conn, args):
 
 
 def cmd_tag(conn, args):
+    if args.batch:
+        # In batch mode: session_id + tags are mixed positional args.
+        # Try resolving each as session; non-matching ones are tags.
+        all_args = [args.session_id] + args.tags
+        sessions, tags = [], []
+        all_sessions = idx.get_all_sessions(conn)
+        for a in all_args:
+            matches = [s for s in all_sessions if s["id"].startswith(a)]
+            if len(matches) == 1:
+                sessions.append(matches[0])
+            else:
+                tags.append(a)
+        if not sessions or not tags:
+            print("Need at least one session ID and one tag.", file=sys.stderr)
+            return
+        for s in sessions:
+            current = json.loads(s.get("user_tags", "[]"))
+            if args.remove:
+                current = [t for t in current if t != args.remove]
+            for t in tags:
+                if t not in current:
+                    current.append(t)
+            idx.update_user_tags(conn, s["id"], current)
+        conn.commit()
+        print(f"✔ Tagged {len(sessions)} session(s) with: {', '.join(tags)}")
+        return
+
     s = _resolve_session(conn, args.session_id)
     if not s:
         return

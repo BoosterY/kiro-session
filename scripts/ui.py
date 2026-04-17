@@ -73,6 +73,35 @@ def format_session_line_plain(s: dict, conn=None) -> str:
     return f"{prefix}{sid}  {name}  ({', '.join(info_parts)})"
 
 
+def _curses_input(screen, prompt: str, max_y: int) -> str | None:
+    """Get text input on the last line of a curses screen. Returns None on Esc."""
+    import curses
+    curses.curs_set(1)
+    y = max_y - 1
+    screen.move(y, 0)
+    screen.clrtoeol()
+    screen.addstr(y, 0, prompt)
+    screen.refresh()
+    buf = []
+    while True:
+        c = screen.getch()
+        if c == 27:  # Esc
+            curses.curs_set(0)
+            return None
+        if c in (curses.KEY_ENTER, ord("\n"), ord("\r")):
+            curses.curs_set(0)
+            return "".join(buf)
+        if c in (curses.KEY_BACKSPACE, 127, 8):
+            if buf:
+                buf.pop()
+        elif 32 <= c < 127:
+            buf.append(chr(c))
+        screen.move(y, 0)
+        screen.clrtoeol()
+        screen.addstr(y, 0, prompt + "".join(buf))
+        screen.refresh()
+
+
 def session_picker(conn, sessions: list[dict]) -> dict | None:
     """Interactive session picker with colors."""
     try:
@@ -90,15 +119,15 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
         cols = os.get_terminal_size().columns - 6
     except OSError:
         cols = 74
-    options = [_truncate_to_width(format_session_line_plain(s, conn), cols) for s in sessions]
-    title = f"Sessions ({len(sessions)} total, ↑↓/jk navigate, Enter select, q quit)\n⚡= LLM Index Pending"
+
+    all_sessions = sessions
+    current_sessions = list(sessions)
 
     try:
-        from pick import pick, Picker
+        from pick import Picker
+        import curses as _curses
 
         # Disable wrap-around: stop at top/bottom
-        _orig_move_up = Picker.move_up
-        _orig_move_down = Picker.move_down
         def _move_down_no_wrap(self):
             if self.index + 1 < len(self.options):
                 self.index += 1
@@ -108,14 +137,90 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
         Picker.move_down = _move_down_no_wrap
         Picker.move_up = _move_up_no_wrap
 
-        result = pick(options, title, indicator="→", quit_keys=[ord('q')])
-        if result is None or result[1] == -1:
-            return None
-        return sessions[result[1]]
+        while True:
+            options = [_truncate_to_width(format_session_line_plain(s, conn), cols) for s in current_sessions]
+            total = len(all_sessions)
+            shown = len(current_sessions)
+            filter_info = f" (filtered: {shown}/{total})" if shown != total else ""
+            title = f"Sessions ({shown}{filter_info}, ↑↓/jk, Enter select, / filter, s search, q quit)\n⚡= LLM Index Pending"
+
+            if not options:
+                print("No matching sessions.", file=sys.stderr)
+                current_sessions = list(all_sessions)
+                continue
+
+            # Use a custom run_loop to intercept / and s
+            action = [None]  # mutable to capture from closure
+
+            orig_run_loop = Picker.run_loop
+            def _custom_run_loop(self, screen, position):
+                from pick import KEYS_UP, KEYS_DOWN, KEYS_ENTER, KEYS_SELECT
+                while True:
+                    self.draw(screen)
+                    c = screen.getch()
+                    if self.quit_keys is not None and c in self.quit_keys:
+                        return None, -1
+                    elif c == ord("/"):
+                        action[0] = "filter"
+                        max_y, _ = screen.getmaxyx()
+                        q = _curses_input(screen._screen, "Filter: ", max_y)
+                        if q is None or q.strip() == "":
+                            action[0] = None
+                            continue
+                        action[0] = ("filter", q.strip().lower())
+                        return None, -2
+                    elif c == ord("s"):
+                        action[0] = "search"
+                        max_y, _ = screen.getmaxyx()
+                        q = _curses_input(screen._screen, "Search: ", max_y)
+                        if q is None or q.strip() == "":
+                            action[0] = None
+                            continue
+                        action[0] = ("search", q.strip())
+                        return None, -2
+                    elif c in KEYS_UP:
+                        self.move_up()
+                    elif c in KEYS_DOWN:
+                        self.move_down()
+                    elif c in KEYS_ENTER:
+                        return self.get_selected()
+                    elif c in KEYS_SELECT and self.multiselect:
+                        self.mark_index()
+
+            Picker.run_loop = _custom_run_loop
+            try:
+                result = pick(options, title, indicator="→", quit_keys=[ord('q')])
+            finally:
+                Picker.run_loop = orig_run_loop
+
+            if result is None or (isinstance(result, tuple) and result[1] == -1):
+                return None
+
+            if isinstance(result, tuple) and result[1] == -2:
+                # Handle filter/search action
+                act = action[0]
+                if isinstance(act, tuple) and act[0] == "filter":
+                    q = act[1]
+                    current_sessions = [
+                        s for s in all_sessions
+                        if q in (s.get("name") or "").lower()
+                        or q in json.loads(s.get("user_tags", "[]")).__repr__().lower()
+                        or q in json.loads(s.get("auto_tags", "[]")).__repr__().lower()
+                        or q in (s.get("directory") or "").lower()
+                    ]
+                    continue
+                elif isinstance(act, tuple) and act[0] == "search":
+                    import searcher
+                    results = searcher.search(conn, act[1], smart=False)
+                    current_sessions = [r["session"] for r in results]
+                    continue
+                continue
+
+            return current_sessions[result[1]]
     except (KeyboardInterrupt, SystemExit):
         return None
     except Exception:
-        # curses overflow — fallback to plain list
+        options = [_truncate_to_width(format_session_line_plain(s, conn), cols) for s in sessions]
         return _fallback_picker(sessions, options)
 
 
@@ -221,6 +326,7 @@ def show_detail(conn, session: dict):
         actions.append("  [i] Index")
     if topics:
         actions.append("  [f] Feedback (re-analyze topics)")
+    actions.append("  [n] Rename")
     actions.append("  [b] Back    [q] Quit")
     print("\n".join(actions))
 
@@ -251,6 +357,10 @@ def show_detail(conn, session: dict):
             return
         elif choice == "t":
             _action_edit_tags(conn, s)
+            show_detail(conn, session)
+            return
+        elif choice == "n":
+            _action_rename(conn, s)
             show_detail(conn, session)
             return
         elif choice == "x" and len(topics) > 1:
@@ -394,6 +504,19 @@ def _action_edit_tags(conn, s: dict):
     idx.update_user_tags(conn, s["id"], current)
     conn.commit()
     print(f"✔ Tags: {', '.join(current)}")
+
+
+def _action_rename(conn, s: dict):
+    print(f"Current name: {s.get('name', '(unnamed)')}")
+    try:
+        new_name = input("New name: ").strip()
+    except (KeyboardInterrupt, EOFError):
+        return
+    if not new_name:
+        return
+    idx.update_session_name(conn, s["id"], new_name)
+    conn.commit()
+    print(f"✔ Renamed to: {new_name}")
 
 
 def _action_delete_topic(conn, s: dict, topics: list[dict]):
