@@ -668,6 +668,17 @@ Output example:
 
 The LLM in the active conversation parses the JSON and presents results in natural language to the user. Interactive operations (browse, split, tag) are not available in skill mode — the skill guides the user to run `kiro-session` in their terminal.
 
+## TODO
+
+### Picker 内搜索
+
+当前 picker 只支持上下导航，不支持搜索。计划加两种：
+
+1. **`/` 本地过滤** — substring match 当前 picker 列表（session 名称、tags、目录），即时过滤，类似 vim `/`
+2. **`s` FTS 全文搜索** — 调用 `searcher.search_fast()`，搜索所有 session 的完整对话内容（user prompt + assistant response），返回新的结果列表替换 picker
+
+FTS 已索引全部对话全文（当前 5000+ 条），零 token 消耗。
+
 ## Key Changes from v0.3.0
 
 | Aspect | v0.3.0 | v2 |
