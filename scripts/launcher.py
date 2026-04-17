@@ -1,20 +1,25 @@
 """Launch kiro-cli with auto-injected /chat load command."""
 import os
 import pty
+import re
 import select
 import signal
 import sys
 import fcntl
 import termios
-import struct
 import tty
 import time
 
 
-def launch_kiro_resume(cwd: str, load_path: str, trust_tools: str = "", delay: float = 2.5):
-    """Spawn kiro-cli chat in a PTY, inject /chat load after delay, hand off to user."""
+# Matches kiro-cli's ready prompt: ">" possibly preceded by ANSI escapes, at line start
+_PROMPT_RE = re.compile(rb'(?:^|\n|\r)(?:\x1b\[[0-9;]*m)*>\s', re.MULTILINE)
+
+_READY_TIMEOUT = 10  # seconds
+
+
+def launch_kiro_resume(cwd: str, load_path: str, trust_tools: str = ""):
+    """Spawn kiro-cli chat in a PTY, inject /chat load when ready, hand off to user."""
     if not sys.stdin.isatty():
-        # No TTY — caller should fall back to print mode
         return False
 
     cmd = ["kiro-cli", "chat"]
@@ -29,7 +34,6 @@ def launch_kiro_resume(cwd: str, load_path: str, trust_tools: str = "", delay: f
         os.execvp(cmd[0], cmd)
         sys.exit(1)
 
-    # Propagate terminal size
     def _sync_winsize():
         try:
             ws = fcntl.ioctl(sys.stdin, termios.TIOCGWINSZ, b'\x00' * 8)
@@ -44,8 +48,9 @@ def launch_kiro_resume(cwd: str, load_path: str, trust_tools: str = "", delay: f
     old = termios.tcgetattr(sys.stdin)
     try:
         tty.setraw(sys.stdin)
-        inject_time = time.monotonic() + delay
         injected = False
+        deadline = time.monotonic() + _READY_TIMEOUT
+        buf = b""
 
         while True:
             try:
@@ -53,18 +58,26 @@ def launch_kiro_resume(cwd: str, load_path: str, trust_tools: str = "", delay: f
             except (select.error, ValueError, OSError):
                 break
 
-            if not injected and time.monotonic() >= inject_time:
-                os.write(master_fd, inject_cmd)
-                injected = True
-
             if master_fd in r:
                 try:
                     data = os.read(master_fd, 4096)
                     if not data:
                         break
                     os.write(sys.stdout.fileno(), data)
+                    if not injected:
+                        buf += data
+                        # Keep only tail to bound memory
+                        if len(buf) > 8192:
+                            buf = buf[-4096:]
                 except OSError:
                     break
+
+            if not injected:
+                ready = _PROMPT_RE.search(buf) or time.monotonic() >= deadline
+                if ready:
+                    os.write(master_fd, inject_cmd)
+                    injected = True
+                    buf = b""
 
             if sys.stdin.fileno() in r:
                 try:
