@@ -210,7 +210,7 @@ def show_detail(conn, session: dict):
     print("=" * 60)
 
     # Actions
-    actions = ["\n  [r] Resume full session"]
+    actions = ["\n  [r] Resume (show instructions)  [g] Go (launch kiro-cli)"]
     if len(topics) > 1:
         actions.append(f"  [1-{len(topics)}] Resume by topic")
     actions.append("  [t] Edit tags")
@@ -237,6 +237,8 @@ def show_detail(conn, session: dict):
             return
         elif choice == "r":
             _action_resume(conn, s, tools)
+        elif choice == "g":
+            _action_resume(conn, s, tools, go=True)
         elif choice == "v":
             _action_save(conn, s)
         elif choice == "d":
