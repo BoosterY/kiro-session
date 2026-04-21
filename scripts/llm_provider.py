@@ -10,6 +10,14 @@ class LLMProvider:
     def query(self, prompt: str, timeout: int = 60) -> str | None:
         raise NotImplementedError
 
+    def query_resume(self, prompt: str, timeout: int = 60) -> str | None:
+        """Continue in the same session. Default: falls back to query()."""
+        return self.query(prompt, timeout)
+
+    def cleanup(self):
+        """Clean up any resources. Default: no-op."""
+        pass
+
     def is_available(self) -> bool:
         raise NotImplementedError
 
@@ -28,7 +36,6 @@ class KiroProvider(LLMProvider):
 
     def query(self, prompt: str, timeout: int = 60) -> str | None:
         import re
-        from pathlib import Path
 
         self._SANDBOX.mkdir(parents=True, exist_ok=True)
         try:
@@ -44,9 +51,27 @@ class KiroProvider(LLMProvider):
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return None
         finally:
-            self._cleanup()
+            self.cleanup()
 
-    def _cleanup(self):
+    def query_resume(self, prompt: str, timeout: int = 60) -> str | None:
+        """Continue in the sandbox session using --resume. No cleanup."""
+        import re
+
+        self._SANDBOX.mkdir(parents=True, exist_ok=True)
+        try:
+            result = subprocess.run(
+                ["kiro-cli", "chat", "--no-interactive", "--resume", prompt],
+                capture_output=True, text=True, timeout=timeout,
+                stdin=subprocess.DEVNULL, cwd=str(self._SANDBOX),
+            )
+            if result.returncode != 0:
+                return None
+            text = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+            return text.strip() or None
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return None
+
+    def cleanup(self):
         """Delete all sessions created under the sandbox dir."""
         sandbox = str(self._SANDBOX)
         try:

@@ -10,12 +10,11 @@ from llm_provider import get_provider
 from extractor import json_loads
 
 TMP_DIR = Path.home() / ".kiro" / "tmp"
-CHUNK_SIZE = 50  # turns per chunk for large sessions
+EXCERPT_LIMIT = 80000  # chars; beyond this, use chunked multi-turn
 
 
 def enrich_session(conn, sid: str, provider=None, feedback: str = "") -> bool:
-    """Layer 1: LLM-enrich a single session. Returns True on success.
-    If feedback is provided, includes previous topics and user feedback in the prompt."""
+    """Layer 1: LLM-enrich a single session. Returns True on success."""
     session = idx.get_session(conn, sid)
     if not session:
         return False
@@ -31,15 +30,15 @@ def enrich_session(conn, sid: str, provider=None, feedback: str = "") -> bool:
 
     prompts = [(t[0], t[1]) for t in turns if t[1]]
     if len(prompts) < 2:
-        # Too few turns for meaningful analysis
         idx.upsert_session(conn, sid, llm_enriched=1)
         conn.commit()
         return True
 
-    if len(prompts) > CHUNK_SIZE:
-        topics, name, tags = _chunk_analyze_merge(prompts, provider, feedback, conn, sid)
+    excerpt = _build_excerpt(prompts)
+    if len(excerpt) <= EXCERPT_LIMIT:
+        topics, name, tags = _analyze(excerpt, len(prompts), provider, feedback, conn, sid)
     else:
-        topics, name, tags = _analyze_single(prompts, provider, feedback, conn, sid)
+        topics, name, tags = _analyze_chunked(prompts, provider, feedback, conn, sid)
 
     if not name:
         return False
@@ -72,11 +71,9 @@ def enrich_batch(conn, provider=None, progress_cb=None) -> int:
     return done
 
 
-def _analyze_single(prompts: list[tuple[int, str]], provider,
-                    feedback: str = "", conn=None, sid: str = "") -> tuple[list, str, list]:
-    """Analyze a session with <= CHUNK_SIZE turns."""
-    excerpt = _build_excerpt(prompts)
-
+def _analyze(excerpt: str, turn_count: int, provider,
+             feedback: str = "", conn=None, sid: str = "") -> tuple[list, str, list]:
+    """Single-call analysis for most sessions."""
     feedback_block = ""
     if feedback and conn and sid:
         prev_topics = idx.get_topics(conn, sid)
@@ -98,44 +95,51 @@ def _analyze_single(prompts: list[tuple[int, str]], provider,
         "Only create multiple topics if clearly distinct subjects exist.\n"
         "Respond with raw JSON only.\n"
         f"{feedback_block}\n"
-        f"Conversation ({len(prompts)} user turns):\n{excerpt}"
+        f"Conversation ({turn_count} user turns):\n{excerpt}"
     )
-
-    response = provider.query(prompt, timeout=60)
-    return _parse_analysis(response)
+    return _parse_analysis(provider.query(prompt, timeout=90))
 
 
-def _chunk_analyze_merge(prompts: list[tuple[int, str]], provider,
-                         feedback: str = "", conn=None, sid: str = "") -> tuple[list, str, list]:
-    """Chunk-analyze-merge for large sessions."""
-    chunks = [prompts[i:i + CHUNK_SIZE] for i in range(0, len(prompts), CHUNK_SIZE)]
-    all_chunk_topics = []
+def _analyze_chunked(prompts: list[tuple[int, str]], provider,
+                     feedback: str = "", conn=None, sid: str = "") -> tuple[list, str, list]:
+    """Multi-turn analysis for very large sessions (>80k chars).
+    Uses --resume to keep context across chunks, then a final merge turn."""
+    CHUNK_CHARS = 40000
+    chunks = []
+    current = []
+    current_len = 0
+    for p in prompts:
+        entry_len = min(len(p[1]), 200) + 10
+        if current and current_len + entry_len > CHUNK_CHARS:
+            chunks.append(current)
+            current = []
+            current_len = 0
+        current.append(p)
+        current_len += entry_len
+    if current:
+        chunks.append(current)
 
-    for chunk in chunks:
+    # First chunk: normal call (creates session in sandbox)
+    first_excerpt = _build_excerpt(chunks[0])
+    prompt = (
+        "I'll send you a long conversation in chunks. Analyze each chunk and remember the topics.\n"
+        "For this first chunk, return ONLY a JSON object with:\n"
+        '- "topics": array of {"title": "...", "summary": "...", "turns": [indices]}\n'
+        "Respond with raw JSON only.\n\n"
+        f"Chunk 1/{len(chunks)} ({len(chunks[0])} turns):\n{first_excerpt}"
+    )
+    response = provider.query(prompt, timeout=90)
+
+    # Subsequent chunks: resume to keep context
+    for i, chunk in enumerate(chunks[1:], 2):
         excerpt = _build_excerpt(chunk)
         prompt = (
-            "Analyze this conversation chunk and return ONLY a JSON object with:\n"
-            '- "topics": array of {"title": "...", "summary": "...", "turns": [indices]}\n'
-            "Group turns by semantic meaning. Respond with raw JSON only.\n\n"
-            f"Chunk ({len(chunk)} turns):\n{excerpt}"
+            f"Chunk {i}/{len(chunks)} ({len(chunk)} turns):\n{excerpt}\n\n"
+            "Analyze and return topics JSON for this chunk."
         )
-        response = provider.query(prompt, timeout=60)
-        if response:
-            try:
-                match = re.search(r"\{.*\}", response, re.DOTALL)
-                if match:
-                    data = json.loads(match.group())
-                    all_chunk_topics.extend(data.get("topics", []))
-            except (json.JSONDecodeError, ValueError):
-                pass
+        response = provider.query_resume(prompt, timeout=90)
 
-    if not all_chunk_topics:
-        return [], "", []
-
-    # Merge phase: LLM consolidates chunk topics
-    topic_list = "\n".join(
-        f'- "{t.get("title", "?")}" (turns: {t.get("turns", [])})' for t in all_chunk_topics
-    )
+    # Final merge turn
     feedback_block = ""
     if feedback and conn and sid:
         prev_topics = idx.get_topics(conn, sid)
@@ -144,16 +148,16 @@ def _chunk_analyze_merge(prompts: list[tuple[int, str]], provider,
             feedback_block = f"\nPrevious grouping:\n{prev}\nUser feedback: {feedback}\n"
 
     merge_prompt = (
-        "Merge these topic groups from different chunks of the same conversation.\n"
-        "Combine topics with the same or similar subject. Return ONLY a JSON object with:\n"
-        '- "name": concise session name (max 60 chars)\n'
+        "Now merge all topics from all chunks into a final result.\n"
+        "Return ONLY a JSON object with:\n"
+        '- "name": concise session name (max 60 chars, in conversation\'s language)\n'
         '- "topics": merged array of {"title": "...", "summary": "...", "turns": [all indices]}\n'
         '- "tags": array of keyword tags\n'
-        "Respond with raw JSON only.\n"
-        f"{feedback_block}\n"
-        f"Topics to merge:\n{topic_list}"
+        "Combine topics with the same subject. Respond with raw JSON only.\n"
+        f"{feedback_block}"
     )
-    response = provider.query(merge_prompt, timeout=60)
+    response = provider.query_resume(merge_prompt, timeout=90)
+    provider.cleanup()
     return _parse_analysis(response)
 
 

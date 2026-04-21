@@ -140,7 +140,7 @@ kiro-session redact abc12345 --turn 3
 ```
 Layer 0: Extractor (read-only scan of kiro DB + JSONL files)
 Layer 1: LLM Enrichment (names, topics, tags via kiro-cli headless)
-Layer 2: UI (pick-based interactive browser + CLI output)
+Layer 2: UI (simple-term-menu interactive browser + CLI output)
 ```
 
 ### Dual Storage
@@ -155,7 +155,8 @@ kiro-session reads both and merges into a unified index at `~/.kiro/session-inde
 
 - Layer 0 runs automatically on every command (<100ms incremental)
 - LLM enrichment generates better names, topic summaries, and semantic tags
-- Auto-enrichment runs in background on every startup when unindexed sessions exist — no frequency limits
+- Single-call analysis for most sessions; chunked multi-turn fallback for very large ones (>80k chars)
+- Auto-enrichment runs in background on every startup when unindexed sessions exist
 - Can also be triggered manually: `kiro-session index` or `[i]` in session detail
 
 ### Resume
