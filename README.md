@@ -2,6 +2,8 @@
 
 Interactive session manager for [Kiro CLI](https://kiro.dev/docs/cli/) — browse, search, resume by topic, save/restore, and manage your chat sessions.
 
+📺 **[Showcase](https://boostery.github.io/kiro-session/)** — see it in action
+
 ## Why
 
 Kiro CLI's built-in session management shows only session IDs and one-line summaries, scoped to the current directory. When you have dozens of sessions across multiple projects, it's hard to find what you need.
@@ -20,7 +22,7 @@ git clone <repo> && cd kiro-session
 ./install.sh
 ```
 
-The installer creates a Python venv, installs dependencies (`pick`, `orjson`, `pyyaml`), and symlinks `kiro-session` to `~/.local/bin/`.
+The installer creates a Python venv, installs dependencies (`simple-term-menu`, `orjson`, `pyyaml`, `jieba`), and symlinks `kiro-session` to `~/.local/bin/`.
 
 ### Requirements
 

@@ -2,11 +2,11 @@
 name: session-manager
 description: "Manage Kiro CLI chat sessions — list, browse, search, split by topic, save/restore, and cleanup. This skill should be used when users want to find previous sessions, browse session history, split a long session into topics, export/import sessions, clean up stale sessions, or start a private/incognito conversation. Triggers include: 'list sessions', 'find session', 'browse sessions', 'split session', 'session topics', 'save session', 'restore session', 'cleanup sessions', 'session history', 'previous conversation', 'old chat', 'private session', 'incognito', 'private conversation', 'sensitive question', 'don't save this', 'topic feedback', 'redo topics'."
 license: Proprietary
-compatibility: Requires Python 3.10+, pick library, and access to Kiro CLI SQLite database
+compatibility: Requires Python 3.10+, simple-term-menu library, and access to Kiro CLI SQLite database
 runtimes:
   - kiro
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
   short_description: Interactive session manager for Kiro CLI — browse, search, split, save/restore.
   authors:
     - "kiro-session contributors"
