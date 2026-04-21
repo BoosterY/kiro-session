@@ -2,6 +2,7 @@
 import subprocess
 import shutil
 import json
+from pathlib import Path
 from config import load_config, get
 
 
@@ -18,48 +19,73 @@ class LLMProvider:
 
 
 class KiroProvider(LLMProvider):
-    """Use kiro-cli headless mode."""
+    """Use kiro-cli headless mode with isolated cwd for reliable cleanup."""
+
+    _SANDBOX = Path.home() / ".kiro" / "skills" / "session-manager" / "llm-sandbox"
 
     def is_available(self) -> bool:
         return shutil.which("kiro-cli") is not None
 
     def query(self, prompt: str, timeout: int = 60) -> str | None:
-        import uuid
-        marker = f"__ks_{uuid.uuid4().hex[:12]}__"
-        tagged_prompt = f"{prompt}\n\n[internal-marker: {marker}]"
+        import re
+        from pathlib import Path
+
+        self._SANDBOX.mkdir(parents=True, exist_ok=True)
         try:
             result = subprocess.run(
-                ["kiro-cli", "chat", "--no-interactive", tagged_prompt],
+                ["kiro-cli", "chat", "--no-interactive", prompt],
                 capture_output=True, text=True, timeout=timeout,
-                stdin=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL, cwd=str(self._SANDBOX),
             )
             if result.returncode != 0:
                 return None
-            import re
             text = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
-            self._cleanup_by_marker(marker)
             return text.strip() or None
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return None
+        finally:
+            self._cleanup()
 
-    @staticmethod
-    def _cleanup_by_marker(marker: str):
-        """Delete the session containing our unique marker."""
+    def _cleanup(self):
+        """Delete all sessions created under the sandbox dir."""
+        sandbox = str(self._SANDBOX)
         try:
             import sqlite3
             from pathlib import Path
             db = Path.home() / ".local" / "share" / "kiro-cli" / "data.sqlite3"
             conn = sqlite3.connect(str(db), timeout=5)
+            # Match exact path or parent (kiro-cli may resolve/shorten the cwd)
             rows = conn.execute(
-                "SELECT conversation_id, value FROM conversations_v2 WHERE value LIKE ?",
-                (f"%{marker}%",)
+                "SELECT conversation_id FROM conversations_v2 WHERE key = ? OR key LIKE ?",
+                (sandbox, sandbox + "%")
             ).fetchall()
             conn.close()
-            for cid, _ in rows:
+            for (cid,) in rows:
                 subprocess.run(
                     ["kiro-cli", "chat", "--delete-session", cid],
                     capture_output=True, timeout=10,
                 )
+        except Exception:
+            pass
+        # Also clean v2 JSONL sessions
+        try:
+            from pathlib import Path
+            import json as _json
+            sessions_dir = Path.home() / ".kiro" / "sessions" / "cli"
+            if sessions_dir.exists():
+                for meta_file in sessions_dir.glob("*.json"):
+                    try:
+                        with open(meta_file) as f:
+                            meta = _json.load(f)
+                        cwd = meta.get("cwd", "")
+                        if cwd == sandbox or cwd.startswith(sandbox):
+                            sid = meta.get("session_id", meta_file.stem)
+                            subprocess.run(
+                                ["kiro-cli", "chat", "--delete-session", sid],
+                                capture_output=True, timeout=10,
+                            )
+                    except Exception:
+                        continue
         except Exception:
             pass
 

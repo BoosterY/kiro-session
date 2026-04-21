@@ -439,13 +439,18 @@ def _index_session(conn: sqlite3.Connection, sid: str, data: dict,
         t["files_touched"] = [f["file_path"] for f in files if f["turn_index"] == t["turn_index"]]
         t["commands_run"] = [c["command"] for c in cmds if c["turn_index"] == t["turn_index"]]
 
-    # FTS content from transcript
+    # FTS content from turns (same source as turns table for consistent turn_index)
     fts_entries = []
-    for ti, text in enumerate(transcript):
-        if isinstance(text, str) and text.strip():
+    for t in turns:
+        parts = []
+        if t["user_prompt"]:
+            parts.append(t["user_prompt"])
+        if t["assistant_response"]:
+            parts.append(t["assistant_response"])
+        if parts:
             fts_entries.append({
-                "turn_index": ti,
-                "content": normalize_text(text[:10000]),
+                "turn_index": t["turn_index"],
+                "content": normalize_text(" ".join(parts)[:10000]),
             })
 
     # Auto-tags from file types and commands

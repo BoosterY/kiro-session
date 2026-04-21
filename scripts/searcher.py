@@ -20,7 +20,7 @@ def search(conn: sqlite3.Connection, query: str = "", smart: bool = False,
 
 def _fast_search(conn: sqlite3.Connection, query: str,
                  candidates: set[str] | None) -> list[dict]:
-    """FTS5 full-text search with snippets."""
+    """FTS5 full-text search with snippets from original text."""
     if not query:
         # No query — just return filtered sessions
         sessions = idx.get_all_sessions(conn)
@@ -35,27 +35,76 @@ def _fast_search(conn: sqlite3.Connection, query: str,
     if not match_expr:
         return []
 
+    # FTS for search + ranking; get turn_index for snippet extraction
     rows = conn.execute(
-        "SELECT session_id, snippet(fts_content, 2, '>>>', '<<<', '...', 30) as snip, rank "
+        "SELECT session_id, turn_index, rank "
         "FROM fts_content WHERE fts_content MATCH ? ORDER BY rank LIMIT 200",
         (match_expr,),
     ).fetchall()
 
-    # Group by session, keep best snippet
+    # Group by session, pick the best-ranked turn_index per session
     seen = {}
-    for r in rows:
-        sid = r[0]
+    for sid, turn_idx, rank in rows:
         if candidates is not None and sid not in candidates:
             continue
         if sid not in seen:
-            seen[sid] = r[1]
+            seen[sid] = (turn_idx, rank)
 
+    # Build snippets from original text in turns table
+    raw_terms = query.lower().split()
     results = []
-    for sid, snippet in seen.items():
+    for sid, (turn_idx, _rank) in seen.items():
         session = idx.get_session(conn, sid)
-        if session:
-            results.append({"session": session, "snippet": snippet})
+        if not session:
+            continue
+        # Get original text for this turn
+        row = conn.execute(
+            "SELECT user_prompt, assistant_response FROM turns "
+            "WHERE session_id = ? AND turn_index = ?", (sid, turn_idx)
+        ).fetchone()
+        snippet = ""
+        if row:
+            snippet = _extract_snippet(row[0] or "", row[1] or "", raw_terms)
+        results.append({"session": session, "snippet": snippet})
     return results
+
+
+def _extract_snippet(user_text: str, assistant_text: str, terms: list[str],
+                     context_chars: int = 60, max_len: int = 150) -> str:
+    """Extract a snippet from original text around the first matching term."""
+    combined = user_text + "\n" + assistant_text
+    text_lower = combined.lower()
+
+    # Find the best match position (earliest term occurrence)
+    best_pos = -1
+    best_term = ""
+    for t in terms:
+        pos = text_lower.find(t)
+        if pos >= 0 and (best_pos < 0 or pos < best_pos):
+            best_pos = pos
+            best_term = t
+
+    if best_pos < 0:
+        # Fallback: return start of text
+        return combined[:max_len].replace("\n", " ").strip()
+
+    # Extract window around match
+    start = max(0, best_pos - context_chars)
+    end = min(len(combined), best_pos + len(best_term) + context_chars)
+    snippet = combined[start:end].replace("\n", " ").strip()
+
+    # Add ellipsis
+    if start > 0:
+        snippet = "..." + snippet
+    if end < len(combined):
+        snippet = snippet + "..."
+
+    # Highlight all matching terms (case-insensitive)
+    for t in terms:
+        import re
+        snippet = re.sub(re.escape(t), lambda m: f">>>{m.group(0)}<<<", snippet, flags=re.IGNORECASE)
+
+    return snippet
 
 
 def _smart_search(conn: sqlite3.Connection, query: str,
