@@ -73,155 +73,73 @@ def format_session_line_plain(s: dict, conn=None) -> str:
     return f"{prefix}{sid}  {name}  ({', '.join(info_parts)})"
 
 
-def _curses_input(screen, prompt: str, max_y: int) -> str | None:
-    """Get text input on the last line of a curses screen. Returns None on Esc."""
-    import curses
-    curses.curs_set(1)
-    y = max_y - 1
-    screen.move(y, 0)
-    screen.clrtoeol()
-    screen.addstr(y, 0, prompt)
-    screen.refresh()
-    buf = []
-    while True:
-        c = screen.getch()
-        if c == 27:  # Esc
-            curses.curs_set(0)
-            return None
-        if c in (curses.KEY_ENTER, ord("\n"), ord("\r")):
-            curses.curs_set(0)
-            return "".join(buf)
-        if c in (curses.KEY_BACKSPACE, 127, 8):
-            if buf:
-                buf.pop()
-        elif 32 <= c < 127:
-            buf.append(chr(c))
-        screen.move(y, 0)
-        screen.clrtoeol()
-        screen.addstr(y, 0, prompt + "".join(buf))
-        screen.refresh()
-
 
 def session_picker(conn, sessions: list[dict]) -> dict | None:
-    """Interactive session picker with colors."""
-    try:
-        from pick import pick
-    except ImportError:
-        print("Error: 'pick' library required.", file=sys.stderr)
-        return None
-
+    """Interactive session picker using simple-term-menu."""
     if not sessions:
         print("No sessions found.", file=sys.stderr)
         return None
 
-    # Truncate lines to terminal width to avoid curses overflow
     try:
-        cols = os.get_terminal_size().columns - 6
+        from simple_term_menu import TerminalMenu
+    except ImportError:
+        return _fallback_picker(sessions,
+            [format_session_line_plain(s, conn) for s in sessions])
+
+    try:
+        cols = os.get_terminal_size().columns - 8
     except OSError:
         cols = 74
+
+    def _build_entries(sess_list):
+        entries = []
+        for i, s in enumerate(sess_list):
+            sid = s["id"][:8]
+            name = (s.get("name") or "(unnamed)")[:50]
+            age = format_age(s.get("updated_at", 0))
+            turns = s.get("user_turn_count", 0)
+            directory = Path(s.get("directory", "")).name or "~"
+            enriched = s.get("llm_enriched", 0)
+            topics = idx.get_topics(conn, s["id"])
+            topic_info = f"{len(topics)} topics" if topics else f"{turns} prompts"
+            prefix = "⚡" if not enriched else "  "
+            line = f"{prefix}{i+1}. {sid}  {name}  ({age}, {topic_info}, {directory})"
+            entries.append(_truncate_to_width(line, cols))
+        return entries
 
     all_sessions = sessions
     current_sessions = list(sessions)
 
-    try:
-        from pick import Picker
-        import curses as _curses
+    while True:
+        entries = _build_entries(current_sessions)
+        if not entries:
+            print("No matching sessions.", file=sys.stderr)
+            current_sessions = list(all_sessions)
+            continue
 
-        # Disable wrap-around: stop at top/bottom
-        def _move_down_no_wrap(self):
-            if self.index + 1 < len(self.options):
-                self.index += 1
-        def _move_up_no_wrap(self):
-            if self.index > 0:
-                self.index -= 1
-        Picker.move_down = _move_down_no_wrap
-        Picker.move_up = _move_up_no_wrap
+        total = len(all_sessions)
+        shown = len(current_sessions)
+        filter_info = f" (filtered: {shown}/{total})" if shown != total else ""
+        title = f"Sessions ({shown}{filter_info})  ⚡= LLM Index Pending"
 
-        while True:
-            options = [_truncate_to_width(format_session_line_plain(s, conn), cols) for s in current_sessions]
-            total = len(all_sessions)
-            shown = len(current_sessions)
-            filter_info = f" (filtered: {shown}/{total})" if shown != total else ""
-            title = f"Sessions ({shown}{filter_info}, ↑↓/jk, Enter select, / filter, s search, q quit)\n⚡= LLM Index Pending"
+        menu = TerminalMenu(
+            entries,
+            title=title,
+            menu_cursor="> ",
+            menu_cursor_style=("fg_cyan", "bold"),
+            menu_highlight_style=("fg_cyan", "bold"),
+            search_key="/",
+            show_search_hint=True,
+            quit_keys=("escape", "q"),
+            cycle_cursor=False,
+            status_bar="Enter: select | /: search | q: quit",
+            status_bar_style=("fg_yellow",),
+        )
 
-            if not options:
-                print("No matching sessions.", file=sys.stderr)
-                current_sessions = list(all_sessions)
-                continue
-
-            # Use a custom run_loop to intercept / and s
-            action = [None]  # mutable to capture from closure
-
-            orig_run_loop = Picker.run_loop
-            def _custom_run_loop(self, screen, position):
-                from pick import KEYS_UP, KEYS_DOWN, KEYS_ENTER, KEYS_SELECT
-                while True:
-                    self.draw(screen)
-                    c = screen.getch()
-                    if self.quit_keys is not None and c in self.quit_keys:
-                        return None, -1
-                    elif c == ord("/"):
-                        action[0] = "filter"
-                        max_y, _ = screen.getmaxyx()
-                        q = _curses_input(screen._screen, "Filter: ", max_y)
-                        if q is None or q.strip() == "":
-                            action[0] = None
-                            continue
-                        action[0] = ("filter", q.strip().lower())
-                        return None, -2
-                    elif c == ord("s"):
-                        action[0] = "search"
-                        max_y, _ = screen.getmaxyx()
-                        q = _curses_input(screen._screen, "Search: ", max_y)
-                        if q is None or q.strip() == "":
-                            action[0] = None
-                            continue
-                        action[0] = ("search", q.strip())
-                        return None, -2
-                    elif c in KEYS_UP:
-                        self.move_up()
-                    elif c in KEYS_DOWN:
-                        self.move_down()
-                    elif c in KEYS_ENTER:
-                        return self.get_selected()
-                    elif c in KEYS_SELECT and self.multiselect:
-                        self.mark_index()
-
-            Picker.run_loop = _custom_run_loop
-            try:
-                result = pick(options, title, indicator="→", quit_keys=[ord('q')])
-            finally:
-                Picker.run_loop = orig_run_loop
-
-            if result is None or (isinstance(result, tuple) and result[1] == -1):
-                return None
-
-            if isinstance(result, tuple) and result[1] == -2:
-                # Handle filter/search action
-                act = action[0]
-                if isinstance(act, tuple) and act[0] == "filter":
-                    q = act[1]
-                    current_sessions = [
-                        s for s in all_sessions
-                        if q in (s.get("name") or "").lower()
-                        or q in json.loads(s.get("user_tags", "[]")).__repr__().lower()
-                        or q in json.loads(s.get("auto_tags", "[]")).__repr__().lower()
-                        or q in (s.get("directory") or "").lower()
-                    ]
-                    continue
-                elif isinstance(act, tuple) and act[0] == "search":
-                    import searcher
-                    results = searcher.search(conn, act[1], smart=False)
-                    current_sessions = [r["session"] for r in results]
-                    continue
-                continue
-
-            return current_sessions[result[1]]
-    except (KeyboardInterrupt, SystemExit):
-        return None
-    except Exception:
-        options = [_truncate_to_width(format_session_line_plain(s, conn), cols) for s in sessions]
-        return _fallback_picker(sessions, options)
+        idx_selected = menu.show()
+        if idx_selected is None:
+            return None
+        return current_sessions[idx_selected]
 
 
 def _display_width(s: str) -> int:
@@ -237,9 +155,11 @@ def _display_width(s: str) -> int:
 
 def _truncate_to_width(s: str, max_width: int) -> str:
     """Truncate string to fit within max_width display columns."""
+    import unicodedata
     w = 0
     for i, ch in enumerate(s):
-        cw = 2 if ord(ch) > 0x7F else 1
+        eaw = unicodedata.east_asian_width(ch)
+        cw = 2 if eaw in ('W', 'F') else 1
         if w + cw > max_width:
             return s[:i]
         w += cw
@@ -277,6 +197,12 @@ def show_detail(conn, session: dict):
         print("Session not found.", file=sys.stderr)
         return
 
+    try:
+        from simple_term_menu import TerminalMenu
+    except ImportError:
+        print("Error: simple-term-menu required.", file=sys.stderr)
+        return
+
     topics = idx.get_topics(conn, sid)
     derivations = idx.get_derivations_for_source(conn, sid)
     derived_topics = {d["topic_index"] for d in derivations}
@@ -291,87 +217,102 @@ def show_detail(conn, session: dict):
     if s["user_turn_count"] == 0:
         marker = "  ⚠ Empty session"
     elif age_days > 90 and s["user_turn_count"] <= 2:
-        marker = f"  ⚠ Suggested for cleanup (stale, {int(age_days)}d, {s['user_turn_count']} turns)"
+        marker = f"  ⚠ Stale ({int(age_days)}d, {s['user_turn_count']} turns)"
     if topics and all(i in derived_topics for i in range(len(topics))):
-        marker = f"  📦 Fully derived ({len(topics)}/{len(topics)} topics)"
+        marker = f"  📦 Fully derived"
 
-    print("\033[2J\033[H", end="")  # clear screen
-    print("=" * 60)
-    print(f"Session: {s['name']}{marker}")
-    print(f"ID:      {sid}")
-    print(f"Dir:     {s.get('directory', '?')}")
-    print(f"Updated: {format_age(s.get('updated_at', 0))}")
-    print(f"Turns:   {s['user_turn_count']} prompts")
-    if tags:
-        print(f"Tags:    {' '.join(f'[{t}]' for t in tags)}")
-
+    # Build title
+    sep = "─" * 56
+    tag_str = " ".join(f"[{t}]" for t in tags) if tags else ""
+    title_lines = [
+        sep,
+        f"  Session: {s['name']}",
+        f"  ID:      {sid[:8]}",
+        f"  Dir:     {s.get('directory', '?')}",
+        f"  Updated: {format_age(s.get('updated_at', 0))}",
+        f"  Turns:   {s['user_turn_count']} prompts{marker}",
+    ]
+    if tag_str:
+        title_lines.append(f"  Tags:    {tag_str}")
     if topics:
-        print(f"\nTopics ({len(topics)}):")
+        title_lines.append("")
+        title_lines.append(f"  Topics ({len(topics)}):")
         for t in topics:
-            derived_mark = "  ✔ derived" if t["topic_index"] in derived_topics else ""
-            print(f"  {t['topic_index'] + 1}. {t['title']}{derived_mark}")
-            if t.get("summary"):
-                print(f"     {t['summary']}")
-    print("=" * 60)
+            dm = " ✔" if t["topic_index"] in derived_topics else ""
+            title_lines.append(f"    {t['topic_index']+1}. {t['title']}{dm}")
+    title_lines.append(sep)
+    title_lines.append("  Actions:")
+    title = "\n".join(title_lines)
 
-    # Actions
-    actions = ["\n  [r] Resume full session"]
-    if len(topics) > 1:
-        actions.append(f"  [1-{len(topics)}] Resume by topic")
-    actions.append("  [t] Edit tags")
-    actions.append("  [v] Save    [d] Delete")
-    if len(topics) > 1:
-        actions.append("  [x] Delete topic")
+    # Build menu entries
+    entries = ["[r] Resume full session"]
+    actions = ["resume"]
+    for t in topics:
+        entries.append(f"[{t['topic_index']+1}] Resume: {t['title']}")
+        actions.append(f"topic_{t['topic_index']}")
+    entries.append(None)
+    actions.append(None)
+    entries.append("[t] Edit tags")
+    actions.append("tags")
+    entries.append("[n] Rename")
+    actions.append("rename")
+    entries.append("[v] Save session")
+    actions.append("save")
     if not s.get("llm_enriched"):
-        actions.append("  [i] Index")
+        entries.append("[i] Index (LLM enrich)")
+        actions.append("index")
     if topics:
-        actions.append("  [f] Feedback (re-analyze topics)")
-    actions.append("  [n] Rename")
-    actions.append("  [b] Back    [q] Quit")
-    print("\n".join(actions))
+        entries.append("[f] Feedback (re-analyze topics)")
+        actions.append("feedback")
+    entries.append(None)
+    actions.append(None)
+    entries.append("[d] Delete session")
+    actions.append("delete")
 
-    # Action loop
-    while True:
-        try:
-            choice = input("> ").strip().lower()
-        except (KeyboardInterrupt, EOFError):
-            return
+    menu = TerminalMenu(
+        entries,
+        title=title,
+        menu_cursor="> ",
+        menu_cursor_style=("fg_cyan", "bold"),
+        menu_highlight_style=("fg_cyan", "bold"),
+        shortcut_key_highlight_style=("fg_yellow",),
+        shortcut_brackets_highlight_style=("fg_gray",),
+        skip_empty_entries=True,
+        accept_keys=("enter", "q"),
+        quit_keys=("escape",),
+        status_bar="Enter: select | Esc: back | q: quit",
+        status_bar_style=("fg_yellow",),
+        clear_screen=True,
+    )
 
-        if choice == "q":
-            sys.exit(0)
-        elif choice == "b":
+    choice_idx = menu.show()
+    if choice_idx is None:
+        return  # Esc → back to list
+    if menu.chosen_accept_key == "q":
+        sys.exit(0)
+
+    action = actions[choice_idx]
+    if action == "resume":
+        _action_resume(conn, s, tools, go=True)
+    elif action and action.startswith("topic_"):
+        ti = int(action.split("_")[1])
+        _action_resume_topic(conn, s, ti, tools, go=True)
+    elif action == "tags":
+        _action_edit_tags(conn, s)
+        show_detail(conn, session)
+    elif action == "rename":
+        _action_rename(conn, s)
+        show_detail(conn, session)
+    elif action == "save":
+        _action_save(conn, s)
+    elif action == "index":
+        _action_index(conn, sid)
+        show_detail(conn, session)
+    elif action == "feedback":
+        _action_feedback(conn, sid, session)
+    elif action == "delete":
+        if _action_delete(conn, s):
             return
-        elif choice == "r":
-            _action_resume(conn, s, tools, go=True)
-        elif choice == "v":
-            _action_save(conn, s)
-        elif choice == "d":
-            if _action_delete(conn, s):
-                return  # back to list
-        elif choice == "i":
-            _action_index(conn, sid)
-            show_detail(conn, session)  # refresh
-            return
-        elif choice == "f" and topics:
-            _action_feedback(conn, sid, session)
-            return
-        elif choice == "t":
-            _action_edit_tags(conn, s)
-            show_detail(conn, session)
-            return
-        elif choice == "n":
-            _action_rename(conn, s)
-            show_detail(conn, session)
-            return
-        elif choice == "x" and len(topics) > 1:
-            _action_delete_topic(conn, s, topics)
-            return
-        elif choice.isdigit() and len(topics) > 1:
-            ti = int(choice) - 1
-            if 0 <= ti < len(topics):
-                _action_resume_topic(conn, s, ti, tools, go=True)
-        else:
-            print("Unknown action.", file=sys.stderr)
 
 
 def _action_resume(conn, s: dict, tools: list[str], go: bool = False):
@@ -446,9 +387,20 @@ def _action_save(conn, s: dict):
 
 
 def _action_delete(conn, s: dict) -> bool:
-    confirm = input(f"Delete session '{s['name']}'? This removes from kiro DB. [y/N] ").strip().lower()
-    if confirm != "y":
-        return False
+    try:
+        from simple_term_menu import TerminalMenu
+        menu = TerminalMenu(
+            ["[y] Yes, delete", "[n] No, cancel"],
+            title=f"Delete '{s['name']}'? This removes from kiro DB.",
+            quit_keys=("escape",),
+            shortcut_key_highlight_style=("fg_red", "bold"),
+        )
+        if menu.show() != 0:
+            return False
+    except ImportError:
+        confirm = input(f"Delete session '{s['name']}'? [y/N] ").strip().lower()
+        if confirm != "y":
+            return False
     # Delete from kiro DB via CLI
     result = subprocess.run(
         ["kiro-cli", "chat", "--delete-session", s["id"]],

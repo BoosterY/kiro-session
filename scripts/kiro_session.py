@@ -213,9 +213,22 @@ def cmd_list(conn, args):
         return
 
     if args.plain or not sys.stdout.isatty():
+        color = sys.stdout.isatty()
         print(f"Sessions ({len(sessions)} total):")
-        for s in sessions:
-            print(ui.format_session_line_plain(s, conn))
+        for i, s in enumerate(sessions, 1):
+            sid = s["id"][:8]
+            name = (s.get("name") or "(unnamed)")[:50]
+            age = ui.format_age(s.get("updated_at", 0))
+            turns = s.get("user_turn_count", 0)
+            directory = Path(s.get("directory", "")).name or "~"
+            enriched = s.get("llm_enriched", 0)
+            topics = idx.get_topics(conn, s["id"])
+            topic_info = f"{len(topics)} topics" if topics else f"{turns} prompts"
+            prefix = "⚡" if not enriched else " "
+            if color:
+                print(f"\033[33m{prefix}\033[36m{i:3d}. {sid}\033[0m  {name}  \033[90m({age}, {topic_info}, {directory})\033[0m")
+            else:
+                print(f"{prefix}{i:3d}. {sid}  {name}  ({age}, {topic_info}, {directory})")
         return
 
     if not sessions:
@@ -242,11 +255,15 @@ def cmd_search(conn, args):
     if not results:
         print("No results.")
         return
-    for r in results:
+    for i, r in enumerate(results, 1):
         s = r["session"]
-        print(f"{s['id'][:8]}  {s.get('name', '?')[:50]}  ({ui.format_age(s.get('updated_at', 0))}, {s.get('directory', '?')})")
+        turns = s.get('user_turn_count', 0)
+        print(f"\033[36m{i:2d}. {s['id'][:8]}\033[0m  {s.get('name', '?')[:50]}  \033[90m({ui.format_age(s.get('updated_at', 0))}, {turns} prompts, {s.get('directory', '?')})\033[0m")
         if r.get("snippet"):
-            print(f"  {r['snippet'][:100]}")
+            snip = r['snippet'][:200].replace(">>>", "\033[1;31m").replace("<<<", "\033[0;90m")
+            print(f"    \033[90m{snip}\033[0m")
+    first_id = results[0]["session"]["id"][:8]
+    print(f"\n\033[33mTip: kiro-session resume {first_id} to continue a session\033[0m")
 
 
 def cmd_index(conn, args):
@@ -433,9 +450,21 @@ def cmd_delete(conn, args):
             return
         sessions.append(s)
     names = "\n".join(f"  {s['id'][:8]}  {s.get('name', '?')}" for s in sessions)
-    confirm = input(f"Delete {len(sessions)} session(s)?\n{names}\n[y/N] ").strip().lower()
-    if confirm != "y":
-        return
+    try:
+        from simple_term_menu import TerminalMenu
+        menu = TerminalMenu(
+            ["[y] Yes, delete", "[n] No, cancel"],
+            title=f"Delete {len(sessions)} session(s)?\n{names}",
+            quit_keys=("escape",),
+            shortcut_key_highlight_style=("fg_red", "bold"),
+        )
+        choice = menu.show()
+        if choice != 0:
+            return
+    except ImportError:
+        confirm = input(f"Delete {len(sessions)} session(s)?\n{names}\n[y/N] ").strip().lower()
+        if confirm != "y":
+            return
     _batch_delete(conn, sessions)
 
 
@@ -532,28 +561,40 @@ def cmd_cleanup(conn, args):
         _json_output(out)
         return
 
-    if stale:
-        print(f"🗑 Stale sessions (>90d, ≤2 turns):")
-        for s, age in stale:
-            print(f"  {s['id'][:8]}  {s.get('name', '?')[:40]}  ({int(age)}d ago, {s['user_turn_count']} turns)")
-    if empty:
-        print(f"\n🗑 Empty sessions (0 turns):")
-        for s, age in empty:
-            print(f"  {s['id'][:8]}  (empty)  ({int(age)}d ago)")
-    if derived:
-        print(f"\n📦 Fully derived sources (>30d):")
-        for s, tc in derived:
-            print(f"  {s['id'][:8]}  {s.get('name', '?')[:40]}  ({tc}/{tc} topics derived)")
+    try:
+        from simple_term_menu import TerminalMenu
+    except ImportError:
+        print("Error: simple-term-menu required.", file=sys.stderr)
+        return
 
-    print(f"\nDelete all suggested? [y/N] or enter IDs to select:")
-    choice = input("> ").strip().lower()
-    if choice == "y":
-        all_to_delete = [s for s, _ in stale] + [s for s, _ in empty] + [s for s, _ in derived]
-        _batch_delete(conn, all_to_delete)
-    elif choice:
-        ids = choice.split()
-        to_delete = [s for s in sessions if any(s["id"].startswith(i) for i in ids)]
-        _batch_delete(conn, to_delete)
+    all_candidates = []
+    entries = []
+    for s, age in stale:
+        all_candidates.append(s)
+        entries.append(f"🗑 {s['id'][:8]}  {s.get('name', '?')[:40]}  ({int(age)}d, {s['user_turn_count']} turns)")
+    for s, age in empty:
+        all_candidates.append(s)
+        entries.append(f"🗑 {s['id'][:8]}  (empty)  ({int(age)}d)")
+    for s, tc in derived:
+        all_candidates.append(s)
+        entries.append(f"📦 {s['id'][:8]}  {s.get('name', '?')[:40]}  ({tc}/{tc} derived)")
+
+    menu = TerminalMenu(
+        entries,
+        title="Cleanup: Space to toggle, Enter to delete selected, Esc to cancel",
+        multi_select=True,
+        show_multi_select_hint=True,
+        multi_select_select_on_accept=False,
+        multi_select_empty_ok=True,
+        quit_keys=("escape", "q"),
+        preselected_entries=list(range(len(entries))),
+    )
+    selected = menu.show()
+    if selected is None or len(selected) == 0:
+        print("Cancelled.")
+        return
+    to_delete = [all_candidates[i] for i in selected]
+    _batch_delete(conn, to_delete)
 
 
 def _batch_delete(conn, sessions: list[dict]):
