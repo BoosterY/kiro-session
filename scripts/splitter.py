@@ -235,6 +235,8 @@ def generate_topic_file(conn, sid: str, topic_index: int) -> Path | None:
     new_session["conversation_id"] = new_id
     new_session["history"] = picked
     new_session["transcript"] = []
+    if "valid_history_range" in new_session:
+        new_session["valid_history_range"] = [0, len(picked)]
     new_session["_kiro_session_source"] = {
         "source_id": sid,
         "type": "topic",

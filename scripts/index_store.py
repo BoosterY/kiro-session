@@ -144,7 +144,7 @@ def delete_session(conn: sqlite3.Connection, sid: str):
         col = "session_id" if table != "sessions" else "id"
         conn.execute(f"DELETE FROM {table} WHERE {col} = ?", (sid,))
     conn.execute("DELETE FROM fts_content WHERE session_id = ?", (sid,))
-    conn.execute("DELETE FROM derivations WHERE derived_session_id = ?", (sid,))
+    conn.execute("DELETE FROM derivations WHERE derived_session_id = ? OR source_session_id = ?", (sid, sid))
 
 
 # --- Turns ---

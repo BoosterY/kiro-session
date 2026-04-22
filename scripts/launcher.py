@@ -10,7 +10,7 @@ import fcntl
 import termios
 import tty
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 
@@ -18,30 +18,34 @@ def _get_picker_index(session_id: str, cwd: str) -> int:
     """Find the target session's position in the picker list (sorted by updated_at DESC)."""
     sessions = []
 
-    # v1: SQLite (updated_at is int ms → convert to ISO for uniform sorting)
+    # v1: SQLite (updated_at is int ms)
     db_path = Path.home() / ".local/share/kiro-cli/data.sqlite3"
     if db_path.exists():
         conn = sqlite3.connect(str(db_path))
         for row in conn.execute(
             "SELECT conversation_id, updated_at FROM conversations_v2 WHERE key = ?", (cwd,)
         ).fetchall():
-            ts_iso = datetime.fromtimestamp(row[1] / 1000, tz=timezone.utc).isoformat()
-            sessions.append((ts_iso, row[0]))
+            sessions.append((row[1] / 1000, row[0]))  # (epoch_sec, cid)
         conn.close()
 
-    # v2: JSONL metadata
+    # v2: JSONL metadata (updated_at is ISO string, always UTC with Z suffix)
     jsonl_dir = Path.home() / ".kiro/sessions/cli"
     if jsonl_dir.exists():
         seen = {s[1] for s in sessions}
         for f in jsonl_dir.glob("*.json"):
             try:
-                meta = json.load(open(f))
+                with open(f) as fh:
+                    meta = json.load(fh)
             except Exception:
                 continue
             sid = meta.get("session_id", "")
             if sid in seen or meta.get("cwd", "") != cwd:
                 continue
-            ts = meta.get("updated_at", "")
+            ts_str = meta.get("updated_at", "")
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
+            except (ValueError, AttributeError):
+                ts = 0
             sessions.append((ts, sid))
 
     # Sort by updated_at descending (matches picker order)

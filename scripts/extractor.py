@@ -521,7 +521,7 @@ def _process_jsonl_session(conn, cid, info):
         updated_at=info["updated_at"],
         user_turn_count=user_turn_count,
         total_turn_count=len(turns),
-        llm_enriched=2 if (existing and existing["llm_enriched"] == 1) else 0,
+        llm_enriched=2 if (existing and existing["llm_enriched"] in (1, 2)) else 0,
         auto_tags=json_dumps(auto_tags),
         keywords=json_dumps(keywords),
     )
@@ -587,7 +587,7 @@ def _index_session(conn: sqlite3.Connection, sid: str, data: dict,
         if isinstance(assistant, dict):
             resp = assistant.get("Response", {})
             if isinstance(resp, dict):
-                response = resp.get("value", "")
+                response = resp.get("content", "") or resp.get("value", "")
             elif isinstance(resp, str):
                 response = resp
             # Tool use extraction — ToolUse has tool_uses array
@@ -657,7 +657,7 @@ def _index_session(conn: sqlite3.Connection, sid: str, data: dict,
         updated_at=updated_at,
         user_turn_count=user_turn_count,
         total_turn_count=len(history),
-        llm_enriched=2 if (existing and existing["llm_enriched"] == 1) else 0,
+        llm_enriched=2 if (existing and existing["llm_enriched"] in (1, 2)) else 0,
         auto_tags=json_dumps(auto_tags),
         keywords=json_dumps(keywords),
     )

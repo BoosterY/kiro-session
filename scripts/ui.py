@@ -138,15 +138,6 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
         return current_sessions[idx_selected]
 
 
-def _display_width(s: str) -> int:
-    """Calculate display width accounting for CJK double-width characters."""
-    w = 0
-    for ch in s:
-        if ord(ch) > 0x7F:
-            w += 2  # CJK and other wide chars
-        else:
-            w += 1
-    return w
 
 
 def _truncate_to_width(s: str, max_width: int) -> str:
@@ -468,17 +459,20 @@ def _action_rename(conn, s: dict):
     print(f"✔ Renamed to: {new_name}")
 
 
-def _action_delete_topic(conn, s: dict, topics: list[dict]):
-    print("Which topic to delete?")
-    for t in topics:
-        print(f"  {t['topic_index'] + 1}. {t['title']}")
-    try:
-        choice = int(input("Topic number: ").strip()) - 1
-    except (ValueError, EOFError):
-        return
-    if choice < 0 or choice >= len(topics):
-        print("Invalid topic number.", file=sys.stderr)
-        return
+def _action_delete_topic(conn, s: dict, topics: list[dict], topic_index: int | None = None):
+    if topic_index is None:
+        print("Which topic to delete?")
+        for t in topics:
+            print(f"  {t['topic_index'] + 1}. {t['title']}")
+        try:
+            choice = int(input("Topic number: ").strip()) - 1
+        except (ValueError, EOFError):
+            return
+        if choice < 0 or choice >= len(topics):
+            print("Invalid topic number.", file=sys.stderr)
+            return
+    else:
+        choice = topic_index
 
     target = topics[choice]
     target_turns = json.loads(target["turn_indices"]) if isinstance(target["turn_indices"], str) else target["turn_indices"]

@@ -31,7 +31,8 @@ def _fast_search(conn: sqlite3.Connection, query: str,
     normalized = normalize_text(query)
     # Build FTS match expression: prefix match on each term
     terms = normalized.split()
-    match_expr = " AND ".join(f'"{t}"*' for t in terms if t.strip())
+    safe_terms = [t.replace('"', '').strip() for t in terms]
+    match_expr = " AND ".join(f'"{t}"*' for t in safe_terms if t)
     if not match_expr:
         return []
 

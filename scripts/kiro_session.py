@@ -445,7 +445,7 @@ def cmd_delete_topic(conn, args):
         print(f"Invalid topic index. Valid: 0-{len(topics)-1}", file=sys.stderr)
         return
     # Delegate to UI which handles the full flow
-    ui._action_delete_topic(conn, s, topics)
+    ui._action_delete_topic(conn, s, topics, topic_index=ti)
 
 
 def cmd_tag(conn, args):
