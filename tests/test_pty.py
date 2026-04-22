@@ -35,7 +35,7 @@ def _strip_ansi(data: bytes) -> str:
 def _pty_run(cmd: list[str], inject: bytes | None = None, timeout: float = 15,
              wait_for: bytes | None = None, cwd: str = "/tmp") -> str:
     """Spawn cmd in PTY, optionally inject input, return cleaned output."""
-    prompt_re = re.compile(rb'(?:^|\n|\r)(?:\x1b\[[0-9;]*m)*>\s', re.MULTILINE)
+    prompt_re = re.compile(rb'(?:\d+%\s)?>\s', re.MULTILINE)
 
     pid, master_fd = pty.fork()
     if pid == 0:

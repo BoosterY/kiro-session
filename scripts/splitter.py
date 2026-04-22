@@ -7,7 +7,6 @@ from pathlib import Path
 
 import index_store as idx
 from llm_provider import get_provider
-from extractor import json_loads
 
 TMP_DIR = Path.home() / ".kiro" / "tmp"
 EXCERPT_LIMIT = 80000  # chars; beyond this, use chunked multi-turn

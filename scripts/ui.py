@@ -38,13 +38,11 @@ def format_session_line(s: dict, conn=None) -> str:
         topics = idx.get_topics(conn, s["id"])
 
     info_parts = [age]
-    if topics:
-        info_parts.append(f"{len(topics)} topics")
-    else:
-        info_parts.append(f"{turns} turns")
+    info_parts.append(f"{len(topics)} topics")
+    info_parts.append(f"{turns} prompts")
     info_parts.append(directory)
 
-    prefix = "\033[33m⚡\033[0m" if not enriched else " "
+    prefix = "\033[33m⚡\033[0m" if enriched == 0 else ("\033[33m~\033[0m" if enriched == 2 else " ")
     meta = f"\033[90m({', '.join(info_parts)})\033[0m"
     return f"{prefix} \033[36m{sid}\033[0m  {name}  {meta}"
 
@@ -63,13 +61,11 @@ def format_session_line_plain(s: dict, conn=None) -> str:
         topics = idx.get_topics(conn, s["id"])
 
     info_parts = [age]
-    if topics:
-        info_parts.append(f"{len(topics)} topics")
-    else:
-        info_parts.append(f"{turns} turns")
+    info_parts.append(f"{len(topics)} topics")
+    info_parts.append(f"{turns} prompts")
     info_parts.append(directory)
 
-    prefix = "⚡ " if not enriched else "   "
+    prefix = "⚡ " if enriched == 0 else ("~  " if enriched == 2 else "   ")
     return f"{prefix}{sid}  {name}  ({', '.join(info_parts)})"
 
 
@@ -101,9 +97,9 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
             directory = Path(s.get("directory", "")).name or "~"
             enriched = s.get("llm_enriched", 0)
             topics = idx.get_topics(conn, s["id"])
-            topic_info = f"{len(topics)} topics" if topics else f"{turns} prompts"
-            prefix = "⚡" if not enriched else "  "
-            line = f"{prefix}{i+1}. {sid}  {name}  ({age}, {topic_info}, {directory})"
+            topic_info = f"{len(topics)} topics, "
+            prefix = "⚡" if enriched == 0 else ("~" if enriched == 2 else "  ")
+            line = f"{prefix}{i+1}. {sid}  {name}  ({age}, {topic_info}{turns} prompts, {directory})"
             entries.append(_truncate_to_width(line, cols))
         return entries
 
@@ -259,8 +255,9 @@ def show_detail(conn, session: dict):
     actions.append("rename")
     entries.append("[v] Save session")
     actions.append("save")
-    if not s.get("llm_enriched"):
-        entries.append("[i] Index (LLM enrich)")
+    if s.get("llm_enriched", 0) != 1:
+        label = "[i] Re-index (LLM enrich)" if s.get("llm_enriched") == 2 else "[i] Index (LLM enrich)"
+        entries.append(label)
         actions.append("index")
     if topics:
         entries.append("[f] Feedback (re-analyze topics)")
@@ -270,9 +267,12 @@ def show_detail(conn, session: dict):
     entries.append("[d] Delete session")
     actions.append("delete")
 
+    # Print title, then show menu below
+    print("\033[2J\033[H", end="")  # clear screen
+    print(title)
+
     menu = TerminalMenu(
         entries,
-        title=title,
         menu_cursor="> ",
         menu_cursor_style=("fg_cyan", "bold"),
         menu_highlight_style=("fg_cyan", "bold"),
@@ -283,7 +283,6 @@ def show_detail(conn, session: dict):
         quit_keys=("escape",),
         status_bar="Enter: select | Esc: back | ^A/^E: top/bottom | q: quit",
         status_bar_style=("fg_yellow",),
-        clear_screen=True,
     )
 
     choice_idx = menu.show()
@@ -320,34 +319,18 @@ def _action_resume(conn, s: dict, tools: list[str], go: bool = False):
     directory = s.get("directory", "~")
     trust = ",".join(tools) if tools else ""
 
-    # Generate temp file with full session for reliable resume
-    from extractor import read_session_data
-    import json as _json
-    data = read_session_data(s["id"])
-    if not data:
-        print("Session not found.", file=sys.stderr)
-        return
-
-    data["_kiro_session_source"] = {"source_id": s["id"], "type": "resume"}
-
-    tmp_dir = Path.home() / ".kiro" / "tmp"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    tmp_path = tmp_dir / f"{s['id'][:8]}-resume.json"
-    with open(tmp_path, "w") as f:
-        _json.dump(data, f, ensure_ascii=False)
-
     if go:
-        from launcher import launch_kiro_resume
+        from launcher import _touch_session_in_db, launch_kiro_resume
+        _touch_session_in_db(directory, s["id"])
         from config import load_config, get
         ui_mode = get(load_config(), "resume.ui") or ""
-        launched = launch_kiro_resume(directory, str(tmp_path), trust, ui_mode=ui_mode)
+        launched = launch_kiro_resume(directory, s["id"], trust, ui_mode=ui_mode)
         if launched is not False:
             return  # unreachable — launch_kiro_resume calls sys.exit
 
     trust_flag = f" --trust-tools={trust}" if trust else ""
     print(f"\nResume in terminal:")
-    print(f"  cd {directory} && kiro-cli chat{trust_flag}")
-    print(f"  Then: /chat load {tmp_path}")
+    print(f"  cd {directory} && kiro-cli chat --resume-picker{trust_flag}")
     print()
 
 
@@ -364,17 +347,24 @@ def _action_resume_topic(conn, s: dict, topic_index: int, tools: list[str], go: 
     print(f"\nTopic '{title}' ready.")
 
     if go:
+        import json as _json
+        with open(path) as f:
+            data = _json.load(f)
+        cid = data.get("conversation_id", "")
+
+        from launcher import _write_to_kiro_db
+        _write_to_kiro_db(directory, cid, data)
+
         from launcher import launch_kiro_resume
         from config import load_config, get
         ui_mode = get(load_config(), "resume.ui") or ""
-        launched = launch_kiro_resume(directory, str(path), trust, ui_mode=ui_mode)
+        launched = launch_kiro_resume(directory, cid, trust, ui_mode=ui_mode)
         if launched is not False:
             return
 
     trust_flag = f" --trust-tools={trust}" if trust else ""
     print(f"Resume in terminal:")
-    print(f"  cd {directory} && kiro-cli chat{trust_flag}")
-    print(f"  Then: /chat load {path}")
+    print(f"  cd {directory} && kiro-cli chat --resume-picker{trust_flag}")
     print()
 
 

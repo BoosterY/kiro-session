@@ -1,37 +1,106 @@
-"""Launch kiro-cli with auto-injected /chat load command."""
+"""Launch kiro-cli with --resume-picker, auto-selecting the target session via PTY."""
+import json
 import os
 import pty
-import re
 import select
 import signal
+import sqlite3
 import sys
 import fcntl
 import termios
 import tty
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 
-# Matches kiro-cli's ready prompt: ">" possibly preceded by ANSI escapes, at line start
-# Legacy UI: "> " prompt; TUI: "Kiro" in status line
-_PROMPT_RE = re.compile(rb'(?:^|\n|\r)(?:\x1b\[[0-9;]*m)*>\s|Kiro', re.MULTILINE)
+def _get_picker_index(session_id: str, cwd: str) -> int:
+    """Find the target session's position in the picker list (sorted by updated_at DESC)."""
+    sessions = []
 
-_READY_TIMEOUT = 10  # seconds
+    # v1: SQLite (updated_at is int ms → convert to ISO for uniform sorting)
+    db_path = Path.home() / ".local/share/kiro-cli/data.sqlite3"
+    if db_path.exists():
+        conn = sqlite3.connect(str(db_path))
+        for row in conn.execute(
+            "SELECT conversation_id, updated_at FROM conversations_v2 WHERE key = ?", (cwd,)
+        ).fetchall():
+            ts_iso = datetime.fromtimestamp(row[1] / 1000, tz=timezone.utc).isoformat()
+            sessions.append((ts_iso, row[0]))
+        conn.close()
+
+    # v2: JSONL metadata
+    jsonl_dir = Path.home() / ".kiro/sessions/cli"
+    if jsonl_dir.exists():
+        seen = {s[1] for s in sessions}
+        for f in jsonl_dir.glob("*.json"):
+            try:
+                meta = json.load(open(f))
+            except Exception:
+                continue
+            sid = meta.get("session_id", "")
+            if sid in seen or meta.get("cwd", "") != cwd:
+                continue
+            ts = meta.get("updated_at", "")
+            sessions.append((ts, sid))
+
+    # Sort by updated_at descending (matches picker order)
+    sessions.sort(key=lambda x: x[0], reverse=True)
+    for i, (_, cid) in enumerate(sessions):
+        if cid.startswith(session_id) or session_id.startswith(cid[:8]):
+            return i
+    return 0
 
 
-def launch_kiro_resume(cwd: str, load_path: str, trust_tools: str = "", ui_mode: str = ""):
-    """Spawn kiro-cli chat in a PTY, inject /chat load when ready, hand off to user."""
+def _write_to_kiro_db(cwd: str, conversation_id: str, data: dict):
+    """Write a session into kiro-cli's SQLite DB."""
+    db_path = Path.home() / ".local/share/kiro-cli/data.sqlite3"
+    if not db_path.exists():
+        return
+    now_ms = int(time.time() * 1000)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO conversations_v2 "
+            "(key, conversation_id, value, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (cwd, conversation_id, json.dumps(data, ensure_ascii=False), now_ms, now_ms),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _touch_session_in_db(cwd: str, session_id: str):
+    """Update updated_at to now so the session sorts first in picker."""
+    db_path = Path.home() / ".local/share/kiro-cli/data.sqlite3"
+    if not db_path.exists():
+        return
+    now_ms = int(time.time() * 1000)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            "UPDATE conversations_v2 SET updated_at = ? WHERE key = ? AND conversation_id = ?",
+            (now_ms, cwd, session_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def launch_kiro_resume(cwd: str, session_id: str, trust_tools: str = "", ui_mode: str = ""):
+    """Launch kiro-cli --resume-picker, auto-select the target session."""
     if not sys.stdin.isatty():
         return False
 
-    cmd = ["kiro-cli", "chat"]
+    picker_index = _get_picker_index(session_id, cwd)
+
+    cmd = ["kiro-cli", "chat", "--resume-picker"]
     if ui_mode == "tui":
         cmd.append("--tui")
     elif ui_mode == "legacy":
         cmd.append("--legacy-ui")
     if trust_tools:
         cmd.append(f"--trust-tools={trust_tools}")
-
-    inject_cmd = f"/chat load {load_path}\r".encode()
 
     pid, master_fd = pty.fork()
     if pid == 0:
@@ -53,8 +122,8 @@ def launch_kiro_resume(cwd: str, load_path: str, trust_tools: str = "", ui_mode:
     old = termios.tcgetattr(sys.stdin)
     try:
         tty.setraw(sys.stdin)
-        injected = False
-        deadline = time.monotonic() + _READY_TIMEOUT
+        selected = False
+        deadline = time.monotonic() + 15
         buf = b""
 
         while True:
@@ -69,19 +138,25 @@ def launch_kiro_resume(cwd: str, load_path: str, trust_tools: str = "", ui_mode:
                     if not data:
                         break
                     os.write(sys.stdout.fileno(), data)
-                    if not injected:
+                    if not selected:
                         buf += data
-                        # Keep only tail to bound memory
-                        if len(buf) > 8192:
-                            buf = buf[-4096:]
+                        if len(buf) > 16384:
+                            buf = buf[-8192:]
                 except OSError:
                     break
 
-            if not injected:
-                ready = _PROMPT_RE.search(buf) or time.monotonic() >= deadline
-                if ready:
-                    os.write(master_fd, inject_cmd)
-                    injected = True
+            if not selected:
+                if b"Select a chat session" in buf:
+                    time.sleep(0.3)
+                    for _ in range(picker_index):
+                        os.write(master_fd, b"\x1b[B")
+                        time.sleep(0.05)
+                    os.write(master_fd, b"\r")
+                    selected = True
+                    buf = b""
+                elif time.monotonic() >= deadline:
+                    # Single session — picker auto-selected, no interaction needed
+                    selected = True
                     buf = b""
 
             if sys.stdin.fileno() in r:
@@ -99,3 +174,6 @@ def launch_kiro_resume(cwd: str, load_path: str, trust_tools: str = "", ui_mode:
         except ChildProcessError:
             status = 0
     sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1)
+
+
+

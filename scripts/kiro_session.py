@@ -223,12 +223,13 @@ def cmd_list(conn, args):
             directory = Path(s.get("directory", "")).name or "~"
             enriched = s.get("llm_enriched", 0)
             topics = idx.get_topics(conn, s["id"])
-            topic_info = f"{len(topics)} topics" if topics else f"{turns} prompts"
-            prefix = "⚡" if not enriched else " "
+            topic_info = f"{len(topics)} topics, "
+            meta = f"{age}, {topic_info}{turns} prompts, {directory}"
+            prefix = "⚡" if enriched == 0 else ("~" if enriched == 2 else " ")
             if color:
-                print(f"\033[33m{prefix}\033[36m{i:3d}. {sid}\033[0m  {name}  \033[90m({age}, {topic_info}, {directory})\033[0m")
+                print(f"\033[33m{prefix}\033[36m{i:3d}. {sid}\033[0m  {name}  \033[90m({meta})\033[0m")
             else:
-                print(f"{prefix}{i:3d}. {sid}  {name}  ({age}, {topic_info}, {directory})")
+                print(f"{prefix}{i:3d}. {sid}  {name}  ({meta})")
         return
 
     if not sessions:

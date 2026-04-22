@@ -521,7 +521,7 @@ def _process_jsonl_session(conn, cid, info):
         updated_at=info["updated_at"],
         user_turn_count=user_turn_count,
         total_turn_count=len(turns),
-        llm_enriched=0,  # content changed → needs re-enrich
+        llm_enriched=2 if (existing and existing["llm_enriched"] == 1) else 0,
         auto_tags=json_dumps(auto_tags),
         keywords=json_dumps(keywords),
     )
@@ -649,30 +649,15 @@ def _index_session(conn: sqlite3.Connection, sid: str, data: dict,
     if source_marker and isinstance(source_marker, dict):
         _record_derivation(conn, sid, source_marker)
 
-    # For resume derivation: inherit enrich data from source, then delete source
-    inherited_name = None
-    inherited_topics = []
-    inherited_tags = "[]"
-    source_id_to_delete = None
-    if (source_marker and isinstance(source_marker, dict)
-            and source_marker.get("type") == "resume" and not existing):
-        src_id = source_marker.get("source_id", "")
-        source = idx.get_session(conn, src_id)
-        if source and source["llm_enriched"]:
-            inherited_name = source["name"]
-            inherited_topics = idx.get_topics(conn, src_id)
-            inherited_tags = source.get("user_tags", "[]")
-            source_id_to_delete = src_id
-
     # Write to index
     idx.upsert_session(conn, sid,
-        name=inherited_name or name,
+        name=name,
         directory=directory,
         created_at=_parse_timestamp(history[0]["user"].get("timestamp")) if history else updated_at,
         updated_at=updated_at,
         user_turn_count=user_turn_count,
         total_turn_count=len(history),
-        llm_enriched=0,
+        llm_enriched=2 if (existing and existing["llm_enriched"] == 1) else 0,
         auto_tags=json_dumps(auto_tags),
         keywords=json_dumps(keywords),
     )
@@ -684,15 +669,6 @@ def _index_session(conn: sqlite3.Connection, sid: str, data: dict,
     # Clear topics if session was re-indexed (content changed)
     if existing and existing["llm_enriched"]:
         idx.replace_topics(conn, sid, [])
-
-    # Resume inheritance: copy topics/tags from source, then delete source
-    if source_id_to_delete:
-        if inherited_topics:
-            idx.replace_topics(conn, sid, inherited_topics)
-        if inherited_tags != "[]":
-            conn.execute("UPDATE sessions SET user_tags = ? WHERE id = ?",
-                         (inherited_tags, sid))
-        _delete_source_session(conn, source_id_to_delete)
 
 
 _LLM_GARBAGE_MARKERS = (
@@ -845,12 +821,6 @@ def _record_derivation(conn: sqlite3.Connection, derived_id: str, marker: dict):
     idx.add_derivation(conn, source_id, topic_index, derived_id, root_id, int(time.time() * 1000))
 
 
-def _delete_source_session(conn: sqlite3.Connection, source_id: str):
-    """Delete source session from both kiro-cli and our index after resume inheritance."""
-    import subprocess
-    subprocess.run(["kiro-cli", "chat", "--delete-session", source_id],
-                   capture_output=True, text=True)
-    idx.delete_session(conn, source_id)
 
 
 def _clean_temp_files(conn: sqlite3.Connection):
