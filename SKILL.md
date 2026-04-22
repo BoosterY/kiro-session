@@ -76,7 +76,10 @@ Resume a session directly from CLI.
 
 ```bash
 kiro-session resume <session-id>                    # resume full session
+kiro-session resume <session-id> --topic N          # resume specific topic
 ```
+
+Resume uses kiro-cli's `--resume-picker` with PTY automation to auto-select the target session. Full resume resumes the original session in-place; topic resume writes cherry-picked turns to kiro DB as a new session.
 
 ### save / restore
 

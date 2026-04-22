@@ -51,6 +51,7 @@ kiro-session private                  # start a private session
 | `kiro-session index [--rebuild]` | Build/refresh LLM index |
 | `kiro-session save <id> [path]` | Export session to JSON |
 | `kiro-session restore <path>` | Import session from JSON |
+| `kiro-session resume <id> [--topic N]` | Resume session (or topic) directly |
 | `kiro-session delete <id>` | Delete session from kiro DB |
 | `kiro-session tag <id> [tags]` | Add/remove user tags |
 | `kiro-session cleanup` | Review cleanup suggestions |
@@ -110,11 +111,12 @@ Topics (3):
   [b] Back    [q] Quit
 ```
 
-- **Resume full** — generates temp JSON, gives `kiro-cli chat` + `/chat load` command
-- **Resume by topic** — cherry-picks only the turns for that topic
+- **Resume full** — uses kiro-cli's native `--resume-picker` to resume the original session in-place (TUI supported)
+- **Resume by topic** — cherry-picks turns for that topic, writes to kiro DB, then resumes via `--resume-picker`
 - **Feedback** — provide feedback on topic grouping, LLM re-analyzes with your guidance
 - **Index** — runs LLM enrichment for better names, topics, and tags (~5s)
 - Sessions without LLM index are marked ⚡ in the list
+- Sessions with stale index (new content since last enrich) are marked ~ and can be re-indexed manually
 
 ## Private Sessions
 
@@ -172,9 +174,12 @@ kiro-session reads both and converts them to a unified ConversationState format.
 
 ### Resume
 
-Resume generates a ConversationState-compatible JSON file and launches `kiro-cli chat` with `/chat load`. This creates a new session with the loaded history — the original session remains unchanged.
+Resume uses kiro-cli's native `--resume-picker` flag. kiro-session automatically selects the target session in the picker via PTY automation:
 
-For JSONL-only sessions (v2 storage), kiro-session converts the wire format (Prompt/AssistantMessage/ToolResults entries) to ConversationState format (`{user, assistant, request_metadata}` turns) that `/chat load` expects.
+1. **Full resume** — touches the session's `updated_at` in kiro DB so it sorts first, then launches `--resume-picker` which auto-selects it. The original session is resumed in-place — no new session is created.
+2. **Topic resume** — generates a ConversationState JSON with cherry-picked turns, writes it to kiro DB as a new session, then launches `--resume-picker` to select it.
+
+Both modes support TUI (`kiro-session config resume.ui tui`).
 
 ## Testing
 
@@ -201,6 +206,7 @@ kiro-session config llm.provider ollama    # set value
 |-----|---------|-------------|
 | `llm.provider` | `auto` | LLM provider: `auto`, `kiro`, `ollama` |
 | `llm.auto_enrich` | `true` | Auto-enrich on detail view |
+| `resume.ui` | `` | Resume UI mode: `tui`, `legacy`, or empty (auto) |
 | `privacy.exclude_dirs` | `[]` | Directories to exclude and purge |
 | `privacy.exclude_sessions` | `[]` | Session IDs to exclude |
 
