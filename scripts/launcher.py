@@ -12,17 +12,22 @@ import time
 
 
 # Matches kiro-cli's ready prompt: ">" possibly preceded by ANSI escapes, at line start
-_PROMPT_RE = re.compile(rb'(?:^|\n|\r)(?:\x1b\[[0-9;]*m)*>\s', re.MULTILINE)
+# Legacy UI: "> " prompt; TUI: "Kiro" in status line
+_PROMPT_RE = re.compile(rb'(?:^|\n|\r)(?:\x1b\[[0-9;]*m)*>\s|Kiro', re.MULTILINE)
 
 _READY_TIMEOUT = 10  # seconds
 
 
-def launch_kiro_resume(cwd: str, load_path: str, trust_tools: str = ""):
+def launch_kiro_resume(cwd: str, load_path: str, trust_tools: str = "", ui_mode: str = ""):
     """Spawn kiro-cli chat in a PTY, inject /chat load when ready, hand off to user."""
     if not sys.stdin.isatty():
         return False
 
     cmd = ["kiro-cli", "chat"]
+    if ui_mode == "tui":
+        cmd.append("--tui")
+    elif ui_mode == "legacy":
+        cmd.append("--legacy-ui")
     if trust_tools:
         cmd.append(f"--trust-tools={trust_tools}")
 

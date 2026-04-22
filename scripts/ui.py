@@ -132,7 +132,7 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
             show_search_hint=True,
             quit_keys=("escape", "q"),
             cycle_cursor=False,
-            status_bar="Enter: select | /: search | q: quit",
+            status_bar="Enter: select | /: search | ^A/^E: top/bottom | q: quit",
             status_bar_style=("fg_yellow",),
         )
 
@@ -248,7 +248,8 @@ def show_detail(conn, session: dict):
     entries = ["[r] Resume full session"]
     actions = ["resume"]
     for t in topics:
-        entries.append(f"[{t['topic_index']+1}] Resume: {t['title']}")
+        num = t['topic_index'] + 1
+        entries.append(f"[{num:>2}] Resume: {t['title']}")
         actions.append(f"topic_{t['topic_index']}")
     entries.append(None)
     actions.append(None)
@@ -280,7 +281,7 @@ def show_detail(conn, session: dict):
         skip_empty_entries=True,
         accept_keys=("enter", "q"),
         quit_keys=("escape",),
-        status_bar="Enter: select | Esc: back | q: quit",
+        status_bar="Enter: select | Esc: back | ^A/^E: top/bottom | q: quit",
         status_bar_style=("fg_yellow",),
         clear_screen=True,
     )
@@ -327,6 +328,8 @@ def _action_resume(conn, s: dict, tools: list[str], go: bool = False):
         print("Session not found.", file=sys.stderr)
         return
 
+    data["_kiro_session_source"] = {"source_id": s["id"], "type": "resume"}
+
     tmp_dir = Path.home() / ".kiro" / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     tmp_path = tmp_dir / f"{s['id'][:8]}-resume.json"
@@ -335,7 +338,9 @@ def _action_resume(conn, s: dict, tools: list[str], go: bool = False):
 
     if go:
         from launcher import launch_kiro_resume
-        launched = launch_kiro_resume(directory, str(tmp_path), trust)
+        from config import load_config, get
+        ui_mode = get(load_config(), "resume.ui") or ""
+        launched = launch_kiro_resume(directory, str(tmp_path), trust, ui_mode=ui_mode)
         if launched is not False:
             return  # unreachable — launch_kiro_resume calls sys.exit
 
@@ -360,7 +365,9 @@ def _action_resume_topic(conn, s: dict, topic_index: int, tools: list[str], go: 
 
     if go:
         from launcher import launch_kiro_resume
-        launched = launch_kiro_resume(directory, str(path), trust)
+        from config import load_config, get
+        ui_mode = get(load_config(), "resume.ui") or ""
+        launched = launch_kiro_resume(directory, str(path), trust, ui_mode=ui_mode)
         if launched is not False:
             return
 

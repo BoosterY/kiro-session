@@ -70,6 +70,17 @@ kiro-session private                  # start a private session
 | `--json` | JSON output |
 | `<session-id>` | Show detail for specific session |
 
+## Keyboard Navigation
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Move selection |
+| `Page Up` / `Page Down` | Scroll by page |
+| `Ctrl-A` / `Ctrl-E` | Jump to top / bottom |
+| `/` | Search / filter |
+| `Enter` | Select |
+| `Esc` / `q` | Back / quit |
+
 ## Session Detail & Actions
 
 Select a session to see its detail page:
@@ -149,7 +160,7 @@ kiro-cli stores sessions in two backends:
 - **v1 (SQLite):** `~/.local/share/kiro-cli/data.sqlite3`
 - **v2 (JSON/JSONL):** `~/.kiro/sessions/cli/*.json + *.jsonl`
 
-kiro-session reads both and merges into a unified index at `~/.kiro/session-index.db`.
+kiro-session reads both and converts them to a unified ConversationState format. The index is stored at `~/.kiro/session-index.db`.
 
 ### Indexing
 
@@ -161,7 +172,22 @@ kiro-session reads both and merges into a unified index at `~/.kiro/session-inde
 
 ### Resume
 
-Resume uses `/chat load` with a generated temp JSON file. This creates a new session with the loaded history — the original session remains unchanged.
+Resume generates a ConversationState-compatible JSON file and launches `kiro-cli chat` with `/chat load`. This creates a new session with the loaded history — the original session remains unchanged.
+
+For JSONL-only sessions (v2 storage), kiro-session converts the wire format (Prompt/AssistantMessage/ToolResults entries) to ConversationState format (`{user, assistant, request_metadata}` turns) that `/chat load` expects.
+
+## Testing
+
+```bash
+python3 tests/test_pty.py    # PTY-based integration tests
+```
+
+Tests include:
+- `list --plain` output validation
+- Resume JSON structure verification (ConversationState format)
+- PTY-based `/chat load` acceptance test
+- Topic resume file generation
+- Save / export / search functionality
 
 ## Configuration
 

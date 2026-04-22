@@ -359,13 +359,7 @@ def _export_one(conn, s: dict, out_dir: Path | None):
 
 
 def _extract_md_turns(data: dict) -> list[tuple[str, str]]:
-    """Extract (role, text) pairs from session data (v1 or v2)."""
-    if data.get("_source") == "jsonl":
-        return _extract_md_turns_v2(data)
-    return _extract_md_turns_v1(data)
-
-
-def _extract_md_turns_v1(data: dict) -> list[tuple[str, str]]:
+    """Extract (role, text) pairs from session data (ConversationState format)."""
     turns = []
     for entry in data.get("history", []):
         user = entry.get("user", {})
@@ -398,37 +392,6 @@ def _extract_md_turns_v1(data: dict) -> list[tuple[str, str]]:
                 if text:
                     parts.append(text)
                 parts.append(f"*Tools used: {', '.join(tools)}*")
-                turns.append(("Assistant", "\n\n".join(parts)))
-    return turns
-
-
-def _extract_md_turns_v2(data: dict) -> list[tuple[str, str]]:
-    turns = []
-    for entry in data.get("history", []):
-        kind = entry.get("kind")
-        d = entry.get("data", {})
-
-        if kind == "Prompt":
-            for c in d.get("content", []):
-                if c.get("kind") == "text":
-                    turns.append(("User", c.get("data", "")))
-                    break
-
-        elif kind == "AssistantMessage":
-            text_parts = []
-            tools = []
-            for c in d.get("content", []):
-                ck = c.get("kind", "")
-                if ck == "text":
-                    text_parts.append(c.get("data", ""))
-                elif ck == "toolUse":
-                    tools.append(c.get("data", {}).get("name", "?"))
-            parts = []
-            if text_parts:
-                parts.append("".join(text_parts))
-            if tools:
-                parts.append(f"*Tools used: {', '.join(tools)}*")
-            if parts:
                 turns.append(("Assistant", "\n\n".join(parts)))
     return turns
 

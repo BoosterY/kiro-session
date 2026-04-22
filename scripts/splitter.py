@@ -205,8 +205,28 @@ def generate_topic_file(conn, sid: str, topic_index: int) -> Path | None:
 
     history = data.get("history", [])
 
-    # Cherry-pick turns
-    picked = [history[i] for i in turn_indices if i < len(history)]
+    # Build prompt_index → history entry ranges mapping
+    # turn_indices are prompt sequence numbers (0=first prompt, 1=second prompt...)
+    # history entries include ToolUseResults between prompts
+    prompt_ranges = {}  # prompt_seq → [history_indices]
+    prompt_seq = 0
+    for hi, entry in enumerate(history):
+        user = entry.get("user", {})
+        content = user.get("content", {})
+        if isinstance(content, dict) and "Prompt" in content:
+            prompt_ranges.setdefault(prompt_seq, []).append(hi)
+            prompt_seq += 1
+        elif isinstance(content, dict) and "ToolUseResults" in content:
+            # Attach to previous prompt
+            if prompt_seq > 0:
+                prompt_ranges.setdefault(prompt_seq - 1, []).append(hi)
+
+    # Cherry-pick all history entries for selected prompts
+    picked_indices = set()
+    for ti in turn_indices:
+        for hi in prompt_ranges.get(ti, []):
+            picked_indices.add(hi)
+    picked = [history[i] for i in sorted(picked_indices)]
     if not picked:
         return None
 
@@ -218,6 +238,7 @@ def generate_topic_file(conn, sid: str, topic_index: int) -> Path | None:
     new_session["transcript"] = []
     new_session["_kiro_session_source"] = {
         "source_id": sid,
+        "type": "topic",
         "topic_index": topic_index,
         "topic_title": topic.get("title", ""),
     }

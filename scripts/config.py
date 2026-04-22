@@ -15,6 +15,7 @@ DEFAULTS = {
     },
     "resume": {
         "extra_args": "",
+        "ui": "",
     },
 }
 

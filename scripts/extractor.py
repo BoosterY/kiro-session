@@ -66,21 +66,205 @@ def read_session_data(sid: str) -> dict | None:
     with open(meta_file) as f:
         meta = _json.load(f)
 
-    # Build a compatible data structure from JSONL
-    history = []
+    # Read JSONL entries and convert to ConversationState format
+    entries = []
     if jsonl_file.exists():
         with open(jsonl_file) as f:
             for line in f:
-                entry = _json.loads(line)
-                history.append(entry)
+                entries.append(_json.loads(line))
 
-    return {
-        "conversation_id": sid,
-        "history": history,
-        "transcript": [],
-        "_source": "jsonl",
-        "_meta": meta,
+    history = _jsonl_to_conversation_state(entries, meta)
+
+    # Build ConversationState with template from SQLite if available
+    template = _get_conversation_template()
+    result = dict(template) if template else {
+        "conversation_id": sid, "history": [], "transcript": [],
+        "valid_history_range": [0, 0], "next_message": None,
     }
+    result["conversation_id"] = sid
+    result["history"] = history
+    result["transcript"] = []
+    result["valid_history_range"] = [0, len(history)]
+    result["next_message"] = None
+    result["latest_summary"] = None
+    result["_meta"] = meta
+    return result
+
+
+def _jsonl_to_conversation_state(entries: list[dict], meta: dict) -> list[dict]:
+    """Convert JSONL v1 wire entries to ConversationState history turns.
+
+    JSONL pattern: Prompt → (AssistantMessage → ToolResults)* → AssistantMessage
+    ConversationState: each entry = {user: {...}, assistant: {...}}
+
+    Mapping:
+      Prompt         → user.content = {"Prompt": {"prompt": text}}
+      ToolResults    → user.content = {"ToolUseResults": {"tool_use_results": [...]}}
+      AssistantMessage with toolUse → assistant = {"ToolUse": {...}}
+      AssistantMessage without     → assistant = {"Response": {...}}
+    """
+    cwd = meta.get("cwd", "")
+    history = []
+    i = 0
+    while i < len(entries):
+        e = entries[i]
+        kind = e.get("kind")
+        d = e.get("data", {})
+
+        if kind == "Prompt":
+            # Extract prompt text
+            prompt_text = ""
+            for c in d.get("content", []):
+                if c.get("kind") == "text":
+                    prompt_text = c.get("data", "")
+                    break
+            ts = d.get("meta", {}).get("timestamp")
+            timestamp = None
+            if ts:
+                from datetime import datetime, timezone
+                try:
+                    timestamp = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+                except Exception:
+                    pass
+
+            user = {
+                "additional_context": "",
+                "env_context": {"env_state": {
+                    "operating_system": "linux",
+                    "current_working_directory": cwd,
+                    "environment_variables": [],
+                }},
+                "content": {"Prompt": {"prompt": prompt_text}},
+                "timestamp": timestamp,
+                "images": None,
+            }
+            assistant = _next_assistant(entries, i + 1)
+            history.append({"user": user, "assistant": assistant[0],
+                            "request_metadata": _make_metadata(assistant[0])})
+            i = assistant[1]
+
+        elif kind == "ToolResults":
+            results = []
+            for c in d.get("content", []):
+                if c.get("kind") == "toolResult":
+                    td = c.get("data", {})
+                    result_content = []
+                    for rc in td.get("content", []):
+                        if isinstance(rc, dict):
+                            rcd = rc.get("data", "")
+                            if isinstance(rcd, str):
+                                result_content.append({"Text": rcd})
+                            else:
+                                import json as _j
+                                result_content.append({"Text": _j.dumps(rcd, ensure_ascii=False)})
+                        else:
+                            result_content.append({"Text": str(rc)})
+                    status = td.get("status", "success")
+                    results.append({
+                        "tool_use_id": td.get("toolUseId", ""),
+                        "content": result_content,
+                        "status": status.capitalize() if status else "Success",
+                    })
+            user = {
+                "additional_context": "",
+                "env_context": {"env_state": {
+                    "operating_system": "linux",
+                    "current_working_directory": cwd,
+                    "environment_variables": [],
+                }},
+                "content": {"ToolUseResults": {"tool_use_results": results}},
+                "timestamp": None,
+                "images": None,
+            }
+            assistant = _next_assistant(entries, i + 1)
+            history.append({"user": user, "assistant": assistant[0],
+                            "request_metadata": _make_metadata(assistant[0])})
+            i = assistant[1]
+
+        elif kind == "Clear":
+            i += 1
+        else:
+            i += 1
+
+    return history
+
+
+_TEMPLATE_CACHE = None
+
+
+def _get_conversation_template() -> dict | None:
+    """Get a ConversationState template from any existing SQLite session."""
+    global _TEMPLATE_CACHE
+    if _TEMPLATE_CACHE is not None:
+        return _TEMPLATE_CACHE
+    try:
+        kiro = kiro_connect()
+        row = kiro.execute("SELECT value FROM conversations_v2 LIMIT 1").fetchone()
+        if row:
+            data = json_loads(row[0])
+            data["history"] = []
+            data["transcript"] = []
+            _TEMPLATE_CACHE = data
+            return data
+    except Exception:
+        pass
+    return None
+
+
+def _make_metadata(assistant: dict) -> dict:
+    """Build minimal request_metadata from assistant message."""
+    mid = ""
+    for key in ("Response", "ToolUse"):
+        if key in assistant:
+            mid = assistant[key].get("message_id", "")
+            break
+    return {
+        "request_id": "", "message_id": mid, "context_usage_percentage": 0.0,
+        "request_start_timestamp_ms": 0, "stream_end_timestamp_ms": 0,
+        "time_to_first_chunk": {"secs": 0, "nanos": 0},
+        "time_between_chunks": [],
+        "user_prompt_length": 0, "response_size": 0,
+        "chat_conversation_type": "ToolUse" if "ToolUse" in assistant else "NotToolUse",
+        "tool_use_ids_and_names": [], "model_id": "", "message_meta_tags": [],
+    }
+
+
+def _next_assistant(entries: list[dict], start: int) -> tuple[dict, int]:
+    """Find the next AssistantMessage from start index. Returns (assistant_dict, next_index)."""
+    if start >= len(entries):
+        return {"Response": {"message_id": "", "content": ""}}, start
+
+    e = entries[start]
+    if e.get("kind") != "AssistantMessage":
+        return {"Response": {"message_id": "", "content": ""}}, start
+
+    d = e.get("data", {})
+    mid = d.get("message_id", "")
+    content_parts = d.get("content", [])
+
+    # Check if this message has tool uses
+    tool_uses = []
+    text_parts = []
+    for c in content_parts:
+        ck = c.get("kind", "")
+        if ck == "toolUse":
+            td = c.get("data", {})
+            tool_uses.append({
+                "id": td.get("toolUseId", ""),
+                "name": td.get("name", ""),
+                "orig_name": td.get("name", ""),
+                "args": td.get("input", {}),
+                "orig_args": td.get("input", {}),
+            })
+        elif ck == "text":
+            text_parts.append(c.get("data", ""))
+
+    text = "\n\n".join(text_parts)
+
+    if tool_uses:
+        return {"ToolUse": {"message_id": mid, "content": text, "tool_uses": tool_uses}}, start + 1
+    else:
+        return {"Response": {"message_id": mid, "content": text}}, start + 1
 
 
 PRIVATE_DIR = Path.home() / ".kiro" / "skills" / "session-manager" / "private"
@@ -329,7 +513,6 @@ def _process_jsonl_session(conn, cid, info):
     name = meta.get("title") or _generate_name(first_prompt, keywords)
 
     existing = idx.get_session(conn, cid)
-    was_enriched = existing["llm_enriched"] if existing else False
 
     idx.upsert_session(conn, cid,
         name=name,
@@ -338,7 +521,7 @@ def _process_jsonl_session(conn, cid, info):
         updated_at=info["updated_at"],
         user_turn_count=user_turn_count,
         total_turn_count=len(turns),
-        llm_enriched=0 if was_enriched else (existing["llm_enriched"] if existing else 0),
+        llm_enriched=0,  # content changed → needs re-enrich
         auto_tags=json_dumps(auto_tags),
         keywords=json_dumps(keywords),
     )
@@ -346,7 +529,7 @@ def _process_jsonl_session(conn, cid, info):
     idx.replace_fts(conn, cid, fts_entries)
     idx.replace_files(conn, cid, files)
     idx.replace_commands(conn, cid, cmds)
-    if was_enriched:
+    if existing and existing["llm_enriched"]:
         idx.replace_topics(conn, cid, [])
 
 
@@ -358,7 +541,6 @@ def _index_session(conn: sqlite3.Connection, sid: str, data: dict,
 
     # Was previously LLM enriched? Reset if content changed.
     existing = idx.get_session(conn, sid)
-    was_enriched = existing["llm_enriched"] if existing else False
 
     # Extract turns
     turns = []
@@ -467,15 +649,30 @@ def _index_session(conn: sqlite3.Connection, sid: str, data: dict,
     if source_marker and isinstance(source_marker, dict):
         _record_derivation(conn, sid, source_marker)
 
+    # For resume derivation: inherit enrich data from source, then delete source
+    inherited_name = None
+    inherited_topics = []
+    inherited_tags = "[]"
+    source_id_to_delete = None
+    if (source_marker and isinstance(source_marker, dict)
+            and source_marker.get("type") == "resume" and not existing):
+        src_id = source_marker.get("source_id", "")
+        source = idx.get_session(conn, src_id)
+        if source and source["llm_enriched"]:
+            inherited_name = source["name"]
+            inherited_topics = idx.get_topics(conn, src_id)
+            inherited_tags = source.get("user_tags", "[]")
+            source_id_to_delete = src_id
+
     # Write to index
     idx.upsert_session(conn, sid,
-        name=name,
+        name=inherited_name or name,
         directory=directory,
         created_at=_parse_timestamp(history[0]["user"].get("timestamp")) if history else updated_at,
         updated_at=updated_at,
         user_turn_count=user_turn_count,
         total_turn_count=len(history),
-        llm_enriched=0 if was_enriched else (existing["llm_enriched"] if existing else 0),
+        llm_enriched=0,
         auto_tags=json_dumps(auto_tags),
         keywords=json_dumps(keywords),
     )
@@ -485,8 +682,17 @@ def _index_session(conn: sqlite3.Connection, sid: str, data: dict,
     idx.replace_commands(conn, sid, cmds)
 
     # Clear topics if session was re-indexed (content changed)
-    if was_enriched:
+    if existing and existing["llm_enriched"]:
         idx.replace_topics(conn, sid, [])
+
+    # Resume inheritance: copy topics/tags from source, then delete source
+    if source_id_to_delete:
+        if inherited_topics:
+            idx.replace_topics(conn, sid, inherited_topics)
+        if inherited_tags != "[]":
+            conn.execute("UPDATE sessions SET user_tags = ? WHERE id = ?",
+                         (inherited_tags, sid))
+        _delete_source_session(conn, source_id_to_delete)
 
 
 _LLM_GARBAGE_MARKERS = (
@@ -637,6 +843,14 @@ def _record_derivation(conn: sqlite3.Connection, derived_id: str, marker: dict):
     ).fetchone()
     root_id = existing_deriv[0] if existing_deriv else source_id
     idx.add_derivation(conn, source_id, topic_index, derived_id, root_id, int(time.time() * 1000))
+
+
+def _delete_source_session(conn: sqlite3.Connection, source_id: str):
+    """Delete source session from both kiro-cli and our index after resume inheritance."""
+    import subprocess
+    subprocess.run(["kiro-cli", "chat", "--delete-session", source_id],
+                   capture_output=True, text=True)
+    idx.delete_session(conn, source_id)
 
 
 def _clean_temp_files(conn: sqlite3.Connection):

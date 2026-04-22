@@ -26,16 +26,17 @@ fi
 echo "  ✔ Dependencies OK (python3, kiro-cli, python3-venv)"
 
 # 1. Copy skill to ~/.kiro/skills/
-mkdir -p "$SKILL_DIR"
-cp -r "$SCRIPT_DIR/"* "$SKILL_DIR/" 2>/dev/null || true
-cp "$SCRIPT_DIR/.gitignore" "$SKILL_DIR/" 2>/dev/null || true
+mkdir -p "$SKILL_DIR/scripts"
+cp "$SCRIPT_DIR/kiro-session" "$SKILL_DIR/"
+cp "$SCRIPT_DIR/SKILL.md" "$SKILL_DIR/"
+cp "$SCRIPT_DIR/scripts/"*.py "$SKILL_DIR/scripts/"
 chmod +x "$SKILL_DIR/kiro-session"
 echo "  ✔ Skill installed to $SKILL_DIR"
 
 # 2. Set up Python venv with dependencies
 VENV_DIR="$SKILL_DIR/.venv"
 DEPS_OK=true
-for pkg in simple-term-menu orjson yaml jieba; do
+for pkg in simple_term_menu orjson yaml jieba; do
     "$VENV_DIR/bin/python3" -c "import $pkg" 2>/dev/null || DEPS_OK=false
 done
 
