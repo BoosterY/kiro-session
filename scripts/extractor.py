@@ -512,6 +512,10 @@ def _process_jsonl_session(conn, cid, info):
     keywords = [w for w, _ in word_counter.most_common(20) if w not in _STOP_WORDS][:10]
     name = meta.get("title") or _generate_name(first_prompt, keywords)
 
+    is_subagent = _is_subagent_session(user_turn_count, first_prompt)
+    if is_subagent and "subagent" not in auto_tags:
+        auto_tags.append("subagent")
+
     existing = idx.get_session(conn, cid)
 
     idx.upsert_session(conn, cid,
@@ -521,7 +525,7 @@ def _process_jsonl_session(conn, cid, info):
         updated_at=info["updated_at"],
         user_turn_count=user_turn_count,
         total_turn_count=len(turns),
-        llm_enriched=2 if (existing and existing["llm_enriched"] in (1, 2)) else 0,
+        llm_enriched=1 if is_subagent else (2 if (existing and existing["llm_enriched"] in (1, 2)) else 0),
         auto_tags=json_dumps(auto_tags),
         keywords=json_dumps(keywords),
     )
@@ -649,6 +653,10 @@ def _index_session(conn: sqlite3.Connection, sid: str, data: dict,
     if source_marker and isinstance(source_marker, dict):
         _record_derivation(conn, sid, source_marker)
 
+    is_subagent = _is_subagent_session(user_turn_count, first_prompt)
+    if is_subagent and "subagent" not in auto_tags:
+        auto_tags.append("subagent")
+
     # Write to index
     idx.upsert_session(conn, sid,
         name=name,
@@ -657,7 +665,7 @@ def _index_session(conn: sqlite3.Connection, sid: str, data: dict,
         updated_at=updated_at,
         user_turn_count=user_turn_count,
         total_turn_count=len(history),
-        llm_enriched=2 if (existing and existing["llm_enriched"] in (1, 2)) else 0,
+        llm_enriched=1 if is_subagent else (2 if (existing and existing["llm_enriched"] in (1, 2)) else 0),
         auto_tags=json_dumps(auto_tags),
         keywords=json_dumps(keywords),
     )
@@ -693,6 +701,14 @@ def _is_llm_garbage(data: dict) -> bool:
         elif isinstance(p, str):
             prompt = p
     return any(m in prompt for m in _LLM_GARBAGE_MARKERS)
+
+
+def _is_subagent_session(user_turn_count: int, first_prompt: str) -> bool:
+    """Detect sessions created by subagent invocations.
+
+    Subagent sessions have exactly 1 turn with a long structured prompt (>500 chars).
+    """
+    return user_turn_count == 1 and len(first_prompt) > 500
 
 
 def _extract_tool_data(tool_use: dict, sid: str, turn_index: int,
