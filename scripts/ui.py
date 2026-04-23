@@ -8,7 +8,11 @@ import unicodedata
 from pathlib import Path
 
 import index_store as idx
+import searcher
 import splitter
+from prompt_toolkit import prompt as pt_prompt
+from prompt_toolkit.formatted_text import HTML
+from simple_term_menu import TerminalMenu
 
 
 def format_age(updated_at: int) -> str:
@@ -78,8 +82,8 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
         return None
 
     try:
-        from simple_term_menu import TerminalMenu
-    except ImportError:
+        TerminalMenu  # verify import
+    except Exception:
         return _fallback_picker(sessions,
             [format_session_line_plain(s, conn) for s in sessions])
 
@@ -120,20 +124,25 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
 
     all_sessions = sessions
     current_sessions = list(sessions)
+    search_query = ""
 
     while True:
         entries = _build_entries(current_sessions)
         if not entries:
-            print("No matching sessions.", file=sys.stderr)
-            current_sessions = list(all_sessions)
-            continue
+            if search_query:
+                current_sessions = list(all_sessions)
+                search_query = ""
+                continue
+            print("No sessions found.", file=sys.stderr)
+            return None
 
         total = len(all_sessions)
         shown = len(current_sessions)
-        filter_info = f" (filtered: {shown}/{total})" if shown != total else ""
+        filter_info = f" search: \"{search_query}\"" if search_query else ""
         # Header: col0=icon(3), col3=idx(4), col7=hash(10), col17=name(name_w+1), col=age(8), topics(7), turns(6), dir
         header = f"     {'#':>2}  {'ID':<8}  {'Name':<{name_w}} {'Used':<8}{'Topics':>6} {'Turns':>5} Dir"
-        title = f"Sessions ({shown}{filter_info})  ⏳=pending 🔄=stale ✅=enriched\n{header}"
+        title = f"Sessions ({shown}/{total}{filter_info})  ⏳=pending 🔄=stale ✅=enriched\n{header}"
+        status = "Enter: select | /: filter | s: semantic search | q: quit"
 
         menu = TerminalMenu(
             entries,
@@ -143,16 +152,50 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
             menu_highlight_style=("fg_cyan", "bold"),
             search_key="/",
             show_search_hint=True,
+            accept_keys=("enter", "s"),
             quit_keys=("escape", "q"),
             cycle_cursor=False,
             clear_screen=True,
-            status_bar="Enter: select | /: search | ^A/^E: top/bottom | q: quit",
+            clear_menu_on_exit=False,
+            status_bar=status,
             status_bar_style=("fg_yellow",),
         )
 
         idx_selected = menu.show()
+        key = menu.chosen_accept_key
+
         if idx_selected is None:
+            if search_query:
+                current_sessions = list(all_sessions)
+                search_query = ""
+                continue
+            sys.stdout.write("\033[2J\033[H")
             return None
+
+        # Semantic search
+        if key == "s":
+            try:
+                # Redraw list context before search prompt
+                sys.stdout.write("\033[2J\033[H")
+                print(title)
+                for e in entries[:15]:
+                    print(e)
+                if len(entries) > 15:
+                    print(f"  ... and {len(entries) - 15} more")
+                print()
+                q = pt_prompt(HTML('<b>🔍 Search: </b>')).strip()
+            except (KeyboardInterrupt, EOFError):
+                continue
+            if q:
+                results = searcher.search(conn, q)
+                result_ids = [r["session"]["id"] for r in results]
+                current_sessions = [s for s in all_sessions if s["id"] in result_ids]
+                id_order = {sid: i for i, sid in enumerate(result_ids)}
+                current_sessions.sort(key=lambda s: id_order.get(s["id"], 999))
+                search_query = q
+            continue
+
+        sys.stdout.write("\033[2J\033[H")
         return current_sessions[idx_selected]
 
 
@@ -214,8 +257,8 @@ def show_detail(conn, session: dict):
         return
 
     try:
-        from simple_term_menu import TerminalMenu
-    except ImportError:
+        TerminalMenu  # verify import
+    except Exception:
         print("Error: simple-term-menu required.", file=sys.stderr)
         return
 
@@ -415,7 +458,7 @@ def _action_save(conn, s: dict):
 
 def _action_delete(conn, s: dict) -> bool:
     try:
-        from simple_term_menu import TerminalMenu
+        TerminalMenu  # verify import
         menu = TerminalMenu(
             ["[y] Yes, delete", "[n] No, cancel"],
             title=f"Delete '{s['name']}'? This removes from kiro DB.",
@@ -424,7 +467,7 @@ def _action_delete(conn, s: dict) -> bool:
         )
         if menu.show() != 0:
             return False
-    except ImportError:
+    except Exception:
         confirm = input(f"Delete session '{s['name']}'? [y/N] ").strip().lower()
         if confirm != "y":
             return False

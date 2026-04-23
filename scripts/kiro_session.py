@@ -38,7 +38,6 @@ def main():
     p_search = sub.add_parser("search", help="Search sessions")
     p_search.add_argument("query")
     p_search.add_argument("--json", action="store_true")
-    p_search.add_argument("--smart", action="store_true")
     p_search.add_argument("--file", dest="file_filter", default="")
     p_search.add_argument("--cmd", dest="cmd_filter", default="")
     p_search.add_argument("--dir", "-d", dest="dir_filter", default="")
@@ -242,7 +241,7 @@ def cmd_list(conn, args):
 
 
 def cmd_search(conn, args):
-    results = searcher.search(conn, query=args.query, smart=args.smart,
+    results = searcher.search(conn, query=args.query,
                               file_filter=args.file_filter, cmd_filter=args.cmd_filter,
                               dir_filter=args.dir_filter, recent=args.recent)
     if args.json:
