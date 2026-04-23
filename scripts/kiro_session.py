@@ -47,6 +47,7 @@ def main():
     # index
     p_index = sub.add_parser("index", help="Build/rebuild LLM index")
     p_index.add_argument("--rebuild", action="store_true")
+    p_index.add_argument("--force", action="store_true", help="Re-enrich all sessions")
 
     # export
     p_export = sub.add_parser("export", help="Export session(s) as Markdown")
@@ -278,7 +279,7 @@ def cmd_index(conn, args):
 
     provider = get_provider()
     print(f"LLM provider: {provider.name}", file=sys.stderr)
-    count = splitter.enrich_batch(conn, provider,
+    count = splitter.enrich_batch(conn, provider, force=args.force,
                                   progress_cb=lambda i, t: print(f"  Enriching {i}/{t}...", file=sys.stderr))
     print(f"✔ Enriched {count} session(s).", file=sys.stderr)
 

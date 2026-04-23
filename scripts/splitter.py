@@ -50,15 +50,20 @@ def enrich_session(conn, sid: str, provider=None, feedback: str = "") -> bool:
     return True
 
 
-def enrich_batch(conn, provider=None, progress_cb=None) -> int:
+def enrich_batch(conn, provider=None, force=False, progress_cb=None) -> int:
     """Layer 1: enrich all un-enriched sessions. Returns count."""
     provider = provider or get_provider()
     if provider.name == "NoneProvider":
         return 0
 
-    rows = conn.execute(
-        "SELECT id FROM sessions WHERE llm_enriched = 0 AND user_turn_count >= 1"
-    ).fetchall()
+    if force:
+        rows = conn.execute(
+            "SELECT id FROM sessions WHERE user_turn_count >= 1"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id FROM sessions WHERE llm_enriched = 0 AND user_turn_count >= 1"
+        ).fetchall()
 
     total = len(rows)
     done = 0
