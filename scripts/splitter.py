@@ -28,7 +28,7 @@ def enrich_session(conn, sid: str, provider=None, feedback: str = "") -> bool:
     ).fetchall()
 
     prompts = [(t[0], t[1]) for t in turns if t[1]]
-    if len(prompts) < 1:
+    if not prompts:
         idx.upsert_session(conn, sid, llm_enriched=1)
         conn.commit()
         return True
