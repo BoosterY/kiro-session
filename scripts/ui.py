@@ -278,11 +278,11 @@ def show_detail(conn, session: dict):
     entries.append("[v] Save session")
     actions.append("save")
     if s.get("llm_enriched", 0) == 0:
-        entries.append("[i] Enrich (LLM)")
+        entries.append("[e] Enrich (LLM)")
     elif s.get("llm_enriched") == 2:
-        entries.append("[i] Re-enrich (stale)")
+        entries.append("[e] Re-enrich (stale)")
     else:
-        entries.append("[i] Re-enrich (force)")
+        entries.append("[e] Re-enrich (force)")
     actions.append("enrich")
     if topics:
         entries.append("[f] Feedback (re-analyze topics)")
