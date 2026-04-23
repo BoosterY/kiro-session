@@ -5,11 +5,32 @@ import time
 import uuid
 from pathlib import Path
 
+import numpy as np
+import embed
 import index_store as idx
 from llm_provider import get_provider
 
 TMP_DIR = Path.home() / ".kiro" / "tmp"
 EXCERPT_LIMIT = 80000  # chars; beyond this, use chunked multi-turn
+
+
+def generate_embeddings(conn, sid: str):
+    """Generate and store per-turn embeddings for a session."""
+    turns = conn.execute(
+        "SELECT turn_index, user_prompt FROM turns WHERE session_id = ? ORDER BY turn_index",
+        (sid,),
+    ).fetchall()
+    texts = [(t[0], t[1]) for t in turns if t[1] and t[1].strip()]
+    if not texts:
+        return
+    model = embed.get_model()
+    turn_indices, prompts = zip(*texts)
+    vectors = list(model.embed(list(prompts)))
+    entries = []
+    for ti, vec in zip(turn_indices, vectors):
+        entries.append((ti, np.array(vec, dtype=np.float32).tobytes()))
+    idx.replace_embeddings(conn, sid, entries)
+    conn.commit()
 
 
 def enrich_session(conn, sid: str, provider=None, feedback: str = "") -> bool:
@@ -47,6 +68,7 @@ def enrich_session(conn, sid: str, provider=None, feedback: str = "") -> bool:
     if topics:
         idx.replace_topics(conn, sid, topics)
     conn.commit()
+    generate_embeddings(conn, sid)
     return True
 
 

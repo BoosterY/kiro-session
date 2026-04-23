@@ -36,7 +36,7 @@ echo "  ✔ Skill installed to $SKILL_DIR"
 # 2. Set up Python venv with dependencies
 VENV_DIR="$SKILL_DIR/.venv"
 DEPS_OK=true
-for pkg in simple_term_menu orjson yaml jieba; do
+for pkg in simple_term_menu orjson yaml jieba fastembed numpy prompt_toolkit; do
     "$VENV_DIR/bin/python3" -c "import $pkg" 2>/dev/null || DEPS_OK=false
 done
 
@@ -45,8 +45,8 @@ if [ "$DEPS_OK" = true ] && [ -d "$VENV_DIR" ]; then
 else
     echo "  Setting up Python venv..."
     python3 -m venv "$VENV_DIR"
-    "$VENV_DIR/bin/pip" install --quiet simple-term-menu orjson pyyaml jieba && echo "  ✔ Python venv ready" \
-        || echo "  ⚠ Failed to set up venv. Run: python3 -m venv $VENV_DIR && $VENV_DIR/bin/pip install simple-term-menu orjson pyyaml jieba"
+    "$VENV_DIR/bin/pip" install --quiet simple-term-menu orjson pyyaml jieba fastembed numpy prompt_toolkit && echo "  ✔ Python venv ready" \
+        || echo "  ⚠ Failed to set up venv. Run: python3 -m venv $VENV_DIR && $VENV_DIR/bin/pip install simple-term-menu orjson pyyaml jieba fastembed numpy prompt_toolkit"
 fi
 
 # 3. Symlink CLI command

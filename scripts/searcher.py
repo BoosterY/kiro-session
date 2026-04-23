@@ -1,64 +1,127 @@
-"""Searcher — FTS5 fast mode + LLM smart mode with filters."""
+"""Searcher — Hybrid search: FTS5 keyword + embedding semantic + RRF merge."""
 import json
+import re
 import sqlite3
+import time
+
+import numpy as np
+import embed
 import index_store as idx
-from llm_provider import get_provider
 from extractor import normalize_text
 
 
-def search(conn: sqlite3.Connection, query: str = "", smart: bool = False,
+def search(conn: sqlite3.Connection, query: str = "",
            file_filter: str = "", cmd_filter: str = "",
            dir_filter: str = "", recent: str = "") -> list[dict]:
     """Unified search interface. Returns list of {session, snippet/explanation}."""
-    # Build candidate set from filters
     candidates = _apply_filters(conn, file_filter, cmd_filter, dir_filter, recent)
-
-    if smart:
-        return _smart_search(conn, query, candidates)
-    return _fast_search(conn, query, candidates)
+    return _hybrid_search(conn, query, candidates)
 
 
-def _fast_search(conn: sqlite3.Connection, query: str,
-                 candidates: set[str] | None) -> list[dict]:
-    """FTS5 full-text search with snippets from original text."""
+def _hybrid_search(conn: sqlite3.Connection, query: str,
+                   candidates: set[str] | None) -> list[dict]:
+    """Hybrid search: FTS5 + embedding semantic, merged with RRF."""
     if not query:
-        # No query — just return filtered sessions
         sessions = idx.get_all_sessions(conn)
         if candidates is not None:
             sessions = [s for s in sessions if s["id"] in candidates]
         return [{"session": s, "snippet": ""} for s in sessions]
 
+    fts_ranked = _fts_search(conn, query, candidates)
+    sem_ranked = _semantic_search(conn, query, candidates)
+
+    if not sem_ranked:
+        return _build_results(conn, fts_ranked, query)
+
+    merged = _rrf_merge(fts_ranked, sem_ranked)
+    return _build_results(conn, merged, query)
+
+
+def _fts_search(conn: sqlite3.Connection, query: str,
+                candidates: set[str] | None) -> list[tuple[str, int]]:
+    """FTS5 keyword search. Returns [(session_id, turn_index), ...] ranked."""
     normalized = normalize_text(query)
-    # Build FTS match expression: prefix match on each term
     terms = normalized.split()
     safe_terms = [t.replace('"', '').strip() for t in terms]
     match_expr = " AND ".join(f'"{t}"*' for t in safe_terms if t)
     if not match_expr:
         return []
 
-    # FTS for search + ranking; get turn_index for snippet extraction
     rows = conn.execute(
         "SELECT session_id, turn_index, rank "
         "FROM fts_content WHERE fts_content MATCH ? ORDER BY rank LIMIT 200",
         (match_expr,),
     ).fetchall()
 
-    # Group by session, pick the best-ranked turn_index per session
     seen = {}
     for sid, turn_idx, rank in rows:
         if candidates is not None and sid not in candidates:
             continue
         if sid not in seen:
-            seen[sid] = (turn_idx, rank)
+            seen[sid] = turn_idx
+    return list(seen.items())
 
-    # Build snippets from original text in turns table
+
+def _semantic_search(conn: sqlite3.Connection, query: str,
+                     candidates: set[str] | None, top_k: int = 50) -> list[tuple[str, int]]:
+    """Embedding cosine similarity search. Returns [(session_id, turn_index), ...] ranked."""
+    all_emb = idx.get_all_embeddings(conn)
+    if not all_emb:
+        return []
+
+    model = embed.get_model()
+    query_vec = np.array(list(model.embed([query]))[0], dtype=np.float32)
+    query_norm = query_vec / (np.linalg.norm(query_vec) + 1e-9)
+
+    scores = []
+    for sid, turn_idx, blob in all_emb:
+        if candidates is not None and sid not in candidates:
+            continue
+        vec = np.frombuffer(blob, dtype=np.float32)
+        sim = float(np.dot(query_norm, vec / (np.linalg.norm(vec) + 1e-9)))
+        scores.append((sid, turn_idx, sim))
+
+    scores.sort(key=lambda x: x[2], reverse=True)
+
+    # Deduplicate: best turn per session
+    seen = {}
+    for sid, turn_idx, sim in scores[:top_k]:
+        if sid not in seen:
+            seen[sid] = turn_idx
+    return list(seen.items())
+
+
+def _rrf_merge(fts_ranked: list[tuple[str, int]], sem_ranked: list[tuple[str, int]],
+               k: int = 60) -> list[tuple[str, int]]:
+    """Reciprocal Rank Fusion. Returns merged [(session_id, turn_index), ...]."""
+    scores = {}  # sid -> (rrf_score, best_turn_idx)
+
+    for rank, (sid, ti) in enumerate(fts_ranked):
+        rrf = 1.0 / (k + rank + 1)
+        if sid not in scores or rrf > scores[sid][0]:
+            scores[sid] = (rrf, ti)
+
+    for rank, (sid, ti) in enumerate(sem_ranked):
+        rrf = 1.0 / (k + rank + 1)
+        if sid in scores:
+            old_score, old_ti = scores[sid]
+            scores[sid] = (old_score + rrf, old_ti)
+        else:
+            scores[sid] = (rrf, ti)
+
+    ranked = sorted(scores.items(), key=lambda x: x[1][0], reverse=True)
+    return [(sid, ti) for sid, (_, ti) in ranked]
+
+
+def _build_results(conn: sqlite3.Connection, ranked: list[tuple[str, int]],
+                   query: str) -> list[dict]:
+    """Build result dicts with snippets from ranked (session_id, turn_index) pairs."""
     raw_terms = query.lower().split()
     results = []
-    for sid, (turn_idx, _rank) in seen.items():
+    for sid, turn_idx in ranked:
         session = idx.get_session(conn, sid)
         if not session:
             continue
-        # Get original text for this turn
         row = conn.execute(
             "SELECT user_prompt, assistant_response FROM turns "
             "WHERE session_id = ? AND turn_index = ?", (sid, turn_idx)
@@ -102,68 +165,9 @@ def _extract_snippet(user_text: str, assistant_text: str, terms: list[str],
 
     # Highlight all matching terms (case-insensitive)
     for t in terms:
-        import re
         snippet = re.sub(re.escape(t), lambda m: f">>>{m.group(0)}<<<", snippet, flags=re.IGNORECASE)
 
     return snippet
-
-
-def _smart_search(conn: sqlite3.Connection, query: str,
-                  candidates: set[str] | None) -> list[dict]:
-    """LLM-based semantic search."""
-    provider = get_provider()
-    if not provider.is_available() or provider.name == "NoneProvider":
-        # Fallback to fast search
-        return _fast_search(conn, query, candidates)
-
-    sessions = idx.get_all_sessions(conn)
-    if candidates is not None:
-        sessions = [s for s in sessions if s["id"] in candidates]
-
-    if not sessions:
-        return []
-
-    # Build compact summaries
-    summaries = []
-    for s in sessions:
-        topics = idx.get_topics(conn, s["id"])
-        topic_str = ", ".join(t["title"] for t in topics) if topics else ""
-        tags = json.loads(s.get("auto_tags", "[]")) + json.loads(s.get("user_tags", "[]"))
-        tag_str = ", ".join(tags) if tags else ""
-        line = f'{s["id"][:8]} | {s["name"]} | topics: {topic_str} | tags: {tag_str} | {s["user_turn_count"]} turns'
-        summaries.append(line)
-
-    prompt = (
-        "Given these session summaries, find sessions relevant to the query.\n"
-        "Return ONLY a JSON array of objects: [{\"id\": \"<8-char-id>\", \"explanation\": \"<why relevant>\"}]\n"
-        "Return empty array [] if nothing matches. No markdown.\n\n"
-        f"Query: {query}\n\n"
-        f"Sessions:\n" + "\n".join(summaries)
-    )
-
-    response = provider.query(prompt, timeout=30)
-    if not response:
-        return _fast_search(conn, query, candidates)
-
-    try:
-        # Extract JSON from response
-        import re
-        match = re.search(r"\[.*\]", response, re.DOTALL)
-        if not match:
-            return _fast_search(conn, query, candidates)
-        matches = json.loads(match.group())
-    except (json.JSONDecodeError, ValueError):
-        return _fast_search(conn, query, candidates)
-
-    results = []
-    for m in matches:
-        mid = m.get("id", "")
-        # Find full session by prefix
-        for s in sessions:
-            if s["id"].startswith(mid):
-                results.append({"session": s, "snippet": m.get("explanation", "")})
-                break
-    return results
 
 
 def _apply_filters(conn: sqlite3.Connection, file_filter: str, cmd_filter: str,
@@ -200,7 +204,6 @@ def _apply_filters(conn: sqlite3.Connection, file_filter: str, cmd_filter: str,
         candidates = ids if candidates is None else candidates & ids
 
     if recent:
-        import time, re
         m = re.match(r"(\d+)([dhm])", recent)
         if m:
             val, unit = int(m.group(1)), m.group(2)

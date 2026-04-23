@@ -82,6 +82,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_content USING fts5(
     content,
     tokenize='unicode61'
 );
+
+CREATE TABLE IF NOT EXISTS embeddings (
+    session_id TEXT,
+    turn_index INTEGER,
+    embedding BLOB,
+    PRIMARY KEY (session_id, turn_index)
+);
 """
 
 
@@ -140,7 +147,7 @@ def get_session_updated(conn: sqlite3.Connection) -> dict[str, int]:
 
 
 def delete_session(conn: sqlite3.Connection, sid: str):
-    for table in ("sessions", "turns", "files_used", "commands", "topics"):
+    for table in ("sessions", "turns", "files_used", "commands", "topics", "embeddings"):
         col = "session_id" if table != "sessions" else "id"
         conn.execute(f"DELETE FROM {table} WHERE {col} = ?", (sid,))
     conn.execute("DELETE FROM fts_content WHERE session_id = ?", (sid,))
@@ -179,6 +186,23 @@ def replace_fts(conn: sqlite3.Connection, sid: str, entries: list[dict]):
 def optimize_fts(conn: sqlite3.Connection):
     """Physically purge deleted FTS content from disk."""
     conn.execute("INSERT INTO fts_content(fts_content) VALUES('optimize')")
+
+
+# --- Embeddings ---
+
+def replace_embeddings(conn: sqlite3.Connection, sid: str, entries: list[tuple[int, bytes]]):
+    """Replace embeddings for a session. entries: [(turn_index, embedding_blob), ...]"""
+    conn.execute("DELETE FROM embeddings WHERE session_id = ?", (sid,))
+    for turn_idx, blob in entries:
+        conn.execute(
+            "INSERT INTO embeddings (session_id, turn_index, embedding) VALUES (?, ?, ?)",
+            (sid, turn_idx, blob),
+        )
+
+
+def get_all_embeddings(conn: sqlite3.Connection) -> list[tuple[str, int, bytes]]:
+    """Return all (session_id, turn_index, embedding_blob)."""
+    return conn.execute("SELECT session_id, turn_index, embedding FROM embeddings").fetchall()
 
 
 # --- Files / Commands ---
