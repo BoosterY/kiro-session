@@ -76,27 +76,41 @@ def _write_to_kiro_db(cwd: str, conversation_id: str, data: dict):
 
 def _touch_session_in_db(cwd: str, session_id: str):
     """Update updated_at to now so the session sorts first in picker."""
-    db_path = Path.home() / ".local/share/kiro-cli/data.sqlite3"
-    if not db_path.exists():
-        return
     now_ms = int(time.time() * 1000)
-    conn = sqlite3.connect(str(db_path))
-    try:
-        conn.execute(
-            "UPDATE conversations_v2 SET updated_at = ? WHERE key = ? AND conversation_id = ?",
-            (now_ms, cwd, session_id),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+
+    # v1: SQLite
+    db_path = Path.home() / ".local/share/kiro-cli/data.sqlite3"
+    if db_path.exists():
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute(
+                "UPDATE conversations_v2 SET updated_at = ? WHERE key = ? AND conversation_id = ?",
+                (now_ms, cwd, session_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    # v2: JSONL meta
+    meta_path = Path.home() / ".kiro/sessions/cli" / f"{session_id}.json"
+    if meta_path.exists():
+        try:
+            with open(meta_path) as f:
+                meta = json.load(f)
+            meta["updated_at"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            with open(meta_path, "w") as f:
+                json.dump(meta, f, ensure_ascii=False)
+        except Exception:
+            pass
 
 
-def launch_kiro_resume(cwd: str, session_id: str, trust_tools: str = "", ui_mode: str = ""):
+def launch_kiro_resume(cwd: str, session_id: str, trust_tools: str = "",
+                       ui_mode: str = "", touched: bool = False):
     """Launch kiro-cli --resume-picker, auto-select the target session."""
     if not sys.stdin.isatty():
         return False
 
-    picker_index = _get_picker_index(session_id, cwd)
+    picker_index = 0 if touched else _get_picker_index(session_id, cwd)
 
     cmd = ["kiro-cli", "chat", "--resume-picker"]
     if ui_mode == "tui":

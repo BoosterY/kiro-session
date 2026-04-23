@@ -397,7 +397,7 @@ def _action_resume(conn, s: dict, tools: list[str], go: bool = False):
         _touch_session_in_db(directory, s["id"])
         from config import load_config, get
         ui_mode = get(load_config(), "resume.ui") or ""
-        launched = launch_kiro_resume(directory, s["id"], trust, ui_mode=ui_mode)
+        launched = launch_kiro_resume(directory, s["id"], trust, ui_mode=ui_mode, touched=True)
         if launched is not False:
             return  # unreachable — launch_kiro_resume calls sys.exit
 
@@ -431,7 +431,7 @@ def _action_resume_topic(conn, s: dict, topic_index: int, tools: list[str], go: 
         from launcher import launch_kiro_resume
         from config import load_config, get
         ui_mode = get(load_config(), "resume.ui") or ""
-        launched = launch_kiro_resume(directory, cid, trust, ui_mode=ui_mode)
+        launched = launch_kiro_resume(directory, cid, trust, ui_mode=ui_mode, touched=True)
         if launched is not False:
             return
 
