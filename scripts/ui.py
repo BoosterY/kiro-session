@@ -4,6 +4,7 @@ import os
 import sys
 import subprocess
 import time
+import unicodedata
 from pathlib import Path
 
 import index_store as idx
@@ -42,9 +43,9 @@ def format_session_line(s: dict, conn=None) -> str:
     info_parts.append(f"{turns} prompts")
     info_parts.append(directory)
 
-    prefix = "\033[33m⚡\033[0m" if enriched == 0 else ("\033[33m~\033[0m" if enriched == 2 else " ")
+    icon = "⏳" if enriched == 0 else ("🔄" if enriched == 2 else "✅")
     meta = f"\033[90m({', '.join(info_parts)})\033[0m"
-    return f"{prefix} \033[36m{sid}\033[0m  {name}  {meta}"
+    return f"{icon} \033[36m{sid}\033[0m  {name}  {meta}"
 
 
 def format_session_line_plain(s: dict, conn=None) -> str:
@@ -65,7 +66,7 @@ def format_session_line_plain(s: dict, conn=None) -> str:
     info_parts.append(f"{turns} prompts")
     info_parts.append(directory)
 
-    prefix = "⚡ " if enriched == 0 else ("~  " if enriched == 2 else "   ")
+    prefix = "⏳" if enriched == 0 else ("🔄" if enriched == 2 else "✅")
     return f"{prefix}{sid}  {name}  ({', '.join(info_parts)})"
 
 
@@ -87,20 +88,34 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
     except OSError:
         cols = 74
 
+    # Fixed columns: icon(3) idx(4) hash(9) age(8) topics(3) turns(5) dir(14)
+    # Name gets the rest, capped at 40
+    fixed = 3 + 4 + 10 + 9 + 7 + 6 + 14
+    name_w = min(40, max(15, cols - fixed))
+    dir_w = 12
+
+    def _pad_cjk(s, width):
+        """Pad string to fixed display width, accounting for CJK."""
+        vis = 0
+        for ch in s:
+            eaw = unicodedata.east_asian_width(ch)
+            vis += 2 if eaw in ('W', 'F') else 1
+        return s + ' ' * max(0, width - vis)
+
     def _build_entries(sess_list):
         entries = []
         for i, s in enumerate(sess_list):
             sid = s["id"][:8]
-            name = (s.get("name") or "(unnamed)")[:50]
+            name = _pad_cjk(_truncate_to_width((s.get("name") or "(unnamed)"), name_w - 2), name_w)
             age = format_age(s.get("updated_at", 0))
             turns = s.get("user_turn_count", 0)
-            directory = Path(s.get("directory", "")).name or "~"
+            d = Path(s.get("directory", "")).name or "~"
+            d = d[:dir_w]
             enriched = s.get("llm_enriched", 0)
             topics = idx.get_topics(conn, s["id"])
-            topic_info = f"{len(topics)} topics, "
-            prefix = "⚡" if enriched == 0 else ("~" if enriched == 2 else "  ")
-            line = f"{prefix}{i+1}. {sid}  {name}  ({age}, {topic_info}{turns} prompts, {directory})"
-            entries.append(_truncate_to_width(line, cols))
+            icon = "⏳" if enriched == 0 else ("🔄" if enriched == 2 else "✅")
+            line = f"{icon} {i+1:>2}. {sid}  {name} {age:<8}{len(topics):>6} {turns:>5} {d}"
+            entries.append(line)
         return entries
 
     all_sessions = sessions
@@ -116,7 +131,9 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
         total = len(all_sessions)
         shown = len(current_sessions)
         filter_info = f" (filtered: {shown}/{total})" if shown != total else ""
-        title = f"Sessions ({shown}{filter_info})  ⚡= LLM Index Pending"
+        # Header: col0=icon(3), col3=idx(4), col7=hash(10), col17=name(name_w+1), col=age(8), topics(7), turns(6), dir
+        header = f"     {'#':>2}  {'ID':<8}  {'Name':<{name_w}} {'Used':<8}{'Topics':>6} {'Turns':>5} Dir"
+        title = f"Sessions ({shown}{filter_info})  ⏳=pending 🔄=stale ✅=indexed\n{header}"
 
         menu = TerminalMenu(
             entries,
@@ -128,6 +145,7 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
             show_search_hint=True,
             quit_keys=("escape", "q"),
             cycle_cursor=False,
+            clear_screen=True,
             status_bar="Enter: select | /: search | ^A/^E: top/bottom | q: quit",
             status_bar_style=("fg_yellow",),
         )
@@ -141,15 +159,26 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
 
 
 def _truncate_to_width(s: str, max_width: int) -> str:
-    """Truncate string to fit within max_width display columns."""
-    import unicodedata
+    """Truncate string to fit within max_width display columns, ignoring ANSI escapes."""
     w = 0
-    for i, ch in enumerate(s):
+    i = 0
+    has_ansi = False
+    while i < len(s):
+        # Skip ANSI escape sequences
+        if s[i] == '\033' and i + 1 < len(s) and s[i + 1] == '[':
+            has_ansi = True
+            j = i + 2
+            while j < len(s) and s[j] not in 'mABCDHJKfsu':
+                j += 1
+            i = j + 1
+            continue
+        ch = s[i]
         eaw = unicodedata.east_asian_width(ch)
         cw = 2 if eaw in ('W', 'F') else 1
         if w + cw > max_width:
-            return s[:i]
+            return s[:i] + ('\033[0m' if has_ansi else '')
         w += cw
+        i += 1
     return s
 
 
@@ -211,10 +240,12 @@ def show_detail(conn, session: dict):
     # Build title
     sep = "─" * 56
     tag_str = " ".join(f"[{t}]" for t in tags) if tags else ""
+    enriched = s.get("llm_enriched", 0)
+    e_icon, e_label = ("⏳", "pending") if enriched == 0 else (("🔄", "stale") if enriched == 2 else ("✅", "indexed"))
     title_lines = [
         sep,
         f"  Session: {s['name']}",
-        f"  ID:      {sid[:8]}",
+        f"  ID:      {sid[:8]}  {e_icon} {e_label}",
         f"  Dir:     {s.get('directory', '?')}",
         f"  Updated: {format_age(s.get('updated_at', 0))}",
         f"  Turns:   {s['user_turn_count']} prompts{marker}",
