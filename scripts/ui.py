@@ -133,7 +133,7 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
         filter_info = f" (filtered: {shown}/{total})" if shown != total else ""
         # Header: col0=icon(3), col3=idx(4), col7=hash(10), col17=name(name_w+1), col=age(8), topics(7), turns(6), dir
         header = f"     {'#':>2}  {'ID':<8}  {'Name':<{name_w}} {'Used':<8}{'Topics':>6} {'Turns':>5} Dir"
-        title = f"Sessions ({shown}{filter_info})  ⏳=pending 🔄=stale ✅=indexed\n{header}"
+        title = f"Sessions ({shown}{filter_info})  ⏳=pending 🔄=stale ✅=enriched\n{header}"
 
         menu = TerminalMenu(
             entries,
@@ -241,7 +241,7 @@ def show_detail(conn, session: dict):
     sep = "─" * 56
     tag_str = " ".join(f"[{t}]" for t in tags) if tags else ""
     enriched = s.get("llm_enriched", 0)
-    e_icon, e_label = ("⏳", "pending") if enriched == 0 else (("🔄", "stale") if enriched == 2 else ("✅", "indexed"))
+    e_icon, e_label = ("⏳", "pending") if enriched == 0 else (("🔄", "stale") if enriched == 2 else ("✅", "enriched"))
     title_lines = [
         sep,
         f"  Session: {s['name']}",
@@ -278,12 +278,12 @@ def show_detail(conn, session: dict):
     entries.append("[v] Save session")
     actions.append("save")
     if s.get("llm_enriched", 0) == 0:
-        entries.append("[i] Index (LLM enrich)")
+        entries.append("[i] Enrich (LLM)")
     elif s.get("llm_enriched") == 2:
-        entries.append("[i] Re-index (stale)")
+        entries.append("[i] Re-enrich (stale)")
     else:
-        entries.append("[i] Re-index (force)")
-    actions.append("index")
+        entries.append("[i] Re-enrich (force)")
+    actions.append("enrich")
     if topics:
         entries.append("[f] Feedback (re-analyze topics)")
         actions.append("feedback")
@@ -330,9 +330,9 @@ def show_detail(conn, session: dict):
         show_detail(conn, session)
     elif action == "save":
         _action_save(conn, s)
-    elif action == "index":
+    elif action == "enrich":
         if s.get("llm_enriched") == 1:
-            ans = input("Session already indexed. Re-index? [y/N] ").strip().lower()
+            ans = input("Session already enriched. Re-enrich? [y/N] ").strip().lower()
             if ans != "y":
                 show_detail(conn, session)
                 return
@@ -445,11 +445,11 @@ def _action_delete(conn, s: dict) -> bool:
 
 
 def _action_index(conn, sid: str):
-    print("Indexing with LLM...", file=sys.stderr)
+    print("Enriching with LLM...", file=sys.stderr)
     if splitter.enrich_session(conn, sid):
-        print("✔ LLM index complete.", file=sys.stderr)
+        print("✔ Enrich complete.", file=sys.stderr)
     else:
-        print("✘ LLM indexing failed.", file=sys.stderr)
+        print("✘ Enrich failed.", file=sys.stderr)
 
 
 def _action_feedback(conn, sid: str, session: dict):

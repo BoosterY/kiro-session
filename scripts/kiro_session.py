@@ -45,8 +45,8 @@ def main():
     p_search.add_argument("--recent", "-r", default="")
 
     # index
-    p_index = sub.add_parser("index", help="Build/rebuild LLM index")
-    p_index.add_argument("--rebuild", action="store_true")
+    p_index = sub.add_parser("enrich", aliases=["index"], help="LLM enrich sessions (names, topics, tags)")
+    p_index.add_argument("--rebuild", action="store_true", help="Full rebuild (re-scan + re-enrich)")
     p_index.add_argument("--force", action="store_true", help="Re-enrich all sessions")
 
     # export
@@ -131,7 +131,7 @@ def main():
         cmd_list(conn, args)
     elif cmd == "search":
         cmd_search(conn, args)
-    elif cmd == "index":
+    elif cmd == "enrich" or cmd == "index":
         cmd_index(conn, args)
     elif cmd == "save":
         cmd_save(conn, args)
@@ -439,7 +439,7 @@ def cmd_delete_topic(conn, args):
         return
     topics = idx.get_topics(conn, s["id"])
     if not topics:
-        print("No topics. Run 'kiro-session index' first.", file=sys.stderr)
+        print("No topics. Run 'kiro-session enrich' first.", file=sys.stderr)
         return
     ti = args.topic
     if ti < 0 or ti >= len(topics):
@@ -589,7 +589,7 @@ def cmd_redact(conn, args):
     conn.execute("DELETE FROM commands WHERE session_id = ? AND turn_index = ?", (s["id"], turn))
     idx.optimize_fts(conn)
     conn.commit()
-    print(f"✔ Redacted turn {turn} from index for session {s['id'][:8]}.")
+    print(f"✔ Redacted turn {turn} from session {s['id'][:8]}.")
 
 
 def cmd_resume(conn, args):
@@ -616,7 +616,7 @@ def cmd_context(conn, args):
     if args.topic is not None:
         topics = idx.get_topics(conn, sid)
         if not topics or args.topic >= len(topics):
-            print(f"Topic {args.topic} not found. Run 'kiro-session index' first.", file=sys.stderr)
+            print(f"Topic {args.topic} not found. Run 'kiro-session enrich' first.", file=sys.stderr)
             return
         topic = topics[args.topic]
         indices = json.loads(topic["turn_indices"]) if isinstance(topic["turn_indices"], str) else topic["turn_indices"]
