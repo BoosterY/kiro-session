@@ -20,7 +20,7 @@
 <div class="hero">
   <h1>kiro-<span>session</span></h1>
   <p>Find any conversation in milliseconds. Split long sessions by topic. Resume exactly where you left off. Works as a CLI tool and as a Kiro skill.</p>
-  <div class="badge">Local-first · SQLite + FTS5 · Python 3.10+ · Works with Kiro CLI</div>
+  <div class="badge">Local-first · SQLite + FTS5 + Embeddings · Python 3.10+ · Works with Kiro CLI</div>
 </div>
 
 <!-- 1. Before → Now -->
@@ -44,7 +44,7 @@
       <h3>🚀 With kiro-session</h3>
       <ul>
         <li>Names, topics, tags, metadata</li>
-        <li>FTS5 &lt;50ms or LLM semantic search</li>
+        <li>FTS5 + embedding hybrid search</li>
         <li>Cross-directory, inferred trust tools</li>
         <li>LLM splits by meaning, resume by topic</li>
         <li>Smart cleanup suggestions</li>
@@ -92,8 +92,8 @@
 <div class="tl"></div>
 <div class="tl"><span class="blue">→</span>   612381ac  <span class="orange">API Gateway Migration</span>  <span class="dim">(4d, 3 topics, docs)</span></div>
 <div class="tl">     c3ac5bb0  <span class="orange">Docker Compose Setup</span>  <span class="dim">(25m, 2 topics, infra)</span></div>
-<div class="tl">  ⚡ 5d32ae37  Debug production logs...  <span class="dim">(2d, 53 turns, project-x)</span></div>
-<div class="tl">  ⚡ bcc7b244  Reply with exactly: OK  <span class="dim">(3h, 1 turn, temp)</span></div>
+<div class="tl">  ⏳ 5d32ae37  Debug production logs...  <span class="dim">(2d, 53 turns, project-x)</span></div>
+<div class="tl">  ⏳ bcc7b244  Reply with exactly: OK  <span class="dim">(3h, 1 turn, temp)</span></div>
 <div class="tl"></div>
 <div class="tl"><span class="green">  ✔ Names, topics, tags, recency — find anything instantly.</span></div>
         </div>
@@ -124,7 +124,7 @@
 <div class="tl"><span class="blue">c3ac5bb0</span>  <span class="orange">Docker Compose Setup</span>  <span class="dim">(5d, infra)</span></div>
 <div class="tl">  <span class="dim">...configured</span> <span class="yellow">docker network</span> <span class="dim">for multi-container app...</span></div>
 <div class="tl"></div>
-<div class="tl"><span class="green">  ✔ Full-text search across all content. &lt;50ms. Highlighted snippets.</span></div>
+<div class="tl"><span class="green">  ✔ Hybrid search across all content. Keyword + semantic. Highlighted snippets.</span></div>
         </div>
       </div>
     </div>
@@ -202,7 +202,7 @@
     <div class="card">
       <div class="icon">🔍</div>
       <h3>Instant Search</h3>
-      <p>Full-text search across all conversations in &lt;50ms. Or use LLM smart search for semantic matching across languages.</p>
+      <p>Hybrid search: FTS5 keyword + embedding semantic, merged with RRF. Cross-language. Fully local, no API key.</p>
     </div>
     <div class="card">
       <div class="icon">🏷️</div>
@@ -293,7 +293,7 @@
     <a class="nav-card" href="search.html">
       <div class="icon">🔍</div>
       <h3>Search</h3>
-      <p>FTS5 instant + LLM semantic. Filters, snippets, tags.</p>
+      <p>FTS5 keyword + embedding semantic. Hybrid search, filters, snippets.</p>
     </a>
     <a class="nav-card" href="split.html">
       <div class="icon">✂️</div>

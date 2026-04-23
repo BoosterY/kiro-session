@@ -1,13 +1,13 @@
 ---
 name: session-manager
-description: "Manage Kiro CLI chat sessions — list, browse, search, split by topic, save/restore, and cleanup. This skill should be used when users want to find previous sessions, browse session history, split a long session into topics, export/import sessions, clean up stale sessions, or start a private/incognito conversation. Triggers include: 'list sessions', 'find session', 'browse sessions', 'split session', 'session topics', 'save session', 'restore session', 'cleanup sessions', 'session history', 'previous conversation', 'old chat', 'private session', 'incognito', 'private conversation', 'sensitive question', 'don't save this', 'topic feedback', 'redo topics'."
+description: "Manage Kiro CLI chat sessions — search, list, browse, and manage. Use when users want to find previous sessions, search conversation history, list recent sessions, or start a private conversation. Triggers: 'find session', 'search sessions', 'list sessions', 'previous conversation', 'old chat', 'session history', 'private session', 'incognito', 'don't save this'."
 license: Proprietary
-compatibility: Requires Python 3.10+, simple-term-menu library, and access to Kiro CLI SQLite database
+compatibility: Requires Python 3.10+, kiro-session installed via install.sh
 runtimes:
   - kiro
 metadata:
-  version: "0.5.0"
-  short_description: Interactive session manager for Kiro CLI — browse, search, split, save/restore.
+  version: "0.6.0"
+  short_description: Interactive session manager for Kiro CLI — search, browse, resume by topic.
   authors:
     - "kiro-session contributors"
   roles:
@@ -16,176 +16,86 @@ metadata:
 
 # Session Manager
 
-Manage Kiro CLI chat sessions with enhanced browsing, topic splitting, and lifecycle management.
+Search and manage Kiro CLI chat sessions from within a conversation or via standalone CLI.
 
-## CLI Usage
+## In-Chat Usage (AI-executable)
 
-Run via the `kiro-session` wrapper (symlinked to `~/.local/bin/`):
+These commands can be run via bash tool inside a kiro chat session:
 
-```bash
-kiro-session [command] [options]
-```
-
-Or directly:
+### search (primary use case)
 
 ```bash
-python3 ~/.kiro/skills/session-manager/scripts/kiro_session.py [command] [options]
+python3 ~/.kiro/skills/session-manager/scripts/kiro_session.py search "query" --json
 ```
 
-## Commands
+Hybrid search: FTS5 keyword + embedding semantic, merged with RRF. Cross-language (e.g. "容器部署" finds "docker" sessions).
 
-### list (default)
+JSON output format — array of objects:
+```json
+[
+  {
+    "id": "1ec9859a",
+    "full_id": "1ec9859a-9c90-427f-...",
+    "name": "Docker开发容器构建与多机部署",
+    "dir": "/home/user/dev-env",
+    "updated": "12h ago",
+    "turns": 111,
+    "tags": ["docker", "podman"],
+    "snippet": "...configured nginx reverse proxy for >>>docker<<< containers..."
+  }
+]
+```
 
-Browse and filter sessions. Default command when no subcommand is given.
+Combine with filters:
+```bash
+python3 ~/.kiro/skills/session-manager/scripts/kiro_session.py search "query" --dir docs --json
+python3 ~/.kiro/skills/session-manager/scripts/kiro_session.py search "query" --recent 7d --json
+python3 ~/.kiro/skills/session-manager/scripts/kiro_session.py search "query" --file main.py --json
+```
+
+### list
 
 ```bash
-kiro-session                                        # interactive browser
-kiro-session list --plain                           # non-interactive output
-kiro-session list --dir /path/to/project            # filter by directory
-kiro-session list --recent 7d                       # last 7 days
-kiro-session list --file main.py                    # filter by file touched
-kiro-session list --cmd docker                      # filter by command run
-kiro-session list <session-id-prefix>               # show detail for specific session
+python3 ~/.kiro/skills/session-manager/scripts/kiro_session.py list --plain
+python3 ~/.kiro/skills/session-manager/scripts/kiro_session.py list --plain --recent 7d
+python3 ~/.kiro/skills/session-manager/scripts/kiro_session.py list --plain --dir projectname
+python3 ~/.kiro/skills/session-manager/scripts/kiro_session.py list <session-id-prefix>  # show detail
 ```
 
-In interactive mode, selecting a session shows detail view with actions: resume, resume by topic, tag, save, rename, delete.
+Use `--plain` for non-interactive output. Use `--json` for structured output.
 
-### search
+## Terminal-Only Commands
 
-Full-text search across all session content.
+These require an interactive terminal. When users ask for these, provide the command for them to run:
 
-```bash
-kiro-session search "keyword"                       # FTS5 fast search (<50ms)
-kiro-session search "keyword" --smart               # LLM semantic search
-kiro-session search "keyword" --recent 7d           # combine with filters
-kiro-session search "keyword" --json                # structured output for skill mode
-```
+| Command | What it does |
+|---------|-------------|
+| `kiro-session` | Interactive browser with `/` filter and `s` semantic search |
+| `kiro-session resume <id>` | Resume session via PTY automation |
+| `kiro-session resume <id> --topic N` | Resume specific topic only |
+| `kiro-session index` | LLM enrichment (names, topics, tags) |
+| `kiro-session save <id>` | Export to JSON |
+| `kiro-session export <id>` | Export to Markdown |
+| `kiro-session delete <id>` | Delete session |
+| `kiro-session cleanup` | Review stale session suggestions |
+| `kiro-session tag <id> "tag"` | Add/remove tags |
+| `kiro-session rename <id> "name"` | Rename session |
+| `kiro-session config` | View/set configuration |
 
-### index
+## Private Sessions
 
-Build or refresh the session index with LLM-generated summaries and topic analysis.
+If a user asks for a private conversation, says "don't save this", or wants to ask something sensitive, respond with:
 
-```bash
-kiro-session index                                  # enrich unindexed sessions
-kiro-session index --rebuild                        # rebuild from scratch
-```
-
-### resume
-
-Resume a session directly from CLI.
-
-```bash
-kiro-session resume <session-id>                    # resume full session
-kiro-session resume <session-id> --topic N          # resume specific topic
-```
-
-Resume uses kiro-cli's `--resume-picker` with PTY automation to auto-select the target session. Full resume resumes the original session in-place; topic resume writes cherry-picked turns to kiro DB as a new session.
-
-### save / restore
-
-Export sessions to JSON files and restore them.
-
-```bash
-kiro-session save <session-id> [output-path]        # export to JSON
-kiro-session restore <path>                         # import from JSON to DB
-```
-
-Saved files use ConversationState format, compatible with `/chat load`. For JSONL-only sessions, the wire format is automatically converted during save.
-
-### export
-
-Export session as Markdown.
-
-```bash
-kiro-session export <session-id>                    # export to Markdown
-kiro-session export <session-id> --dir /path        # specify output directory
-```
-
-### tag / rename
-
-```bash
-kiro-session tag <session-id> "tag1" "tag2"         # add tags
-kiro-session tag <session-id> --remove "tag1"       # remove tag
-kiro-session rename <session-id> "new name"         # rename session
-```
-
-### delete / delete-topic
-
-```bash
-kiro-session delete <session-id>                    # delete session
-kiro-session delete-topic <session-id> --topic N    # delete a specific topic
-```
-
-### redact
-
-```bash
-kiro-session redact <session-id> --turn N           # remove turn from index
-```
-
-### cleanup
-
-Review and act on cleanup suggestions for stale or redundant sessions.
-
-```bash
-kiro-session cleanup                                # review suggestions
-```
-
-### config
-
-```bash
-kiro-session config                                 # show all settings
-kiro-session config llm.provider                    # get value
-kiro-session config llm.provider ollama             # set value
-```
-
-### private
-
-Start a private/incognito session that is automatically deleted when you exit.
-
-```bash
-kiro-session private          # start private session
-kiro-session private -a       # with all tools trusted
-```
-
-How it works:
-- Runs kiro-cli in a sandboxed directory (`~/.kiro/skills/session-manager/private/`)
-- On normal exit: session is immediately deleted from all local storage
-- On abnormal exit (window close, crash): cleaned up on next `kiro-session` invocation
-
-**Note:** This only deletes local session data (kiro DB, JSONL files, index). Conversation content sent to the LLM provider during the session may still be retained server-side per the provider's data policies.
-
-**Important:** If a user asks to have a private conversation, ask a sensitive question, or says "don't save this" within an existing chat session, respond with:
-
-> This conversation is already being recorded. To start a private session that won't be saved, please open a new terminal and run:
+> This conversation is already being recorded. To start a private session that won't be saved, open a new terminal and run:
 > ```
 > kiro-session private
 > ```
 > Everything in that session will be automatically deleted when you exit.
 
-Do NOT attempt to run `kiro-session private` from within an existing kiro chat — the child session's content would be captured in the parent session's tool results, defeating the purpose.
+Do NOT run `kiro-session private` from within an existing chat — the child session's content would be captured in the parent session's tool results, defeating the purpose.
 
-## Index File
+## Technical Notes
 
-Session metadata is cached at `~/.kiro/session-index.db`. The index is automatically updated (lazy indexing) on every command when DB changes are detected.
-
-The index tracks:
-- Session names and topic lists
-- LLM-generated topic boundaries and turn indices
-- Parent-child relationships from topic splits
-- User split preferences (learned from feedback)
-- Full-text search index of all user prompts
-
-## Compatibility with Native Kiro CLI
-
-This tool coexists with native session management (`--resume`, `--delete-session`, etc.). If sessions are deleted externally, the index self-heals on next access by removing stale entries and fixing orphaned parent/children references.
-
-## In-Chat Usage
-
-When triggered within a Kiro chat session, run the script via bash tool:
-
-```bash
-python3 ~/.kiro/skills/session-manager/scripts/kiro_session.py search "keyword" --json
-python3 ~/.kiro/skills/session-manager/scripts/kiro_session.py list --plain
-```
-
-For interactive operations (split, cleanup), run in the user's terminal directly.
+- Index file: `~/.kiro/session-index.db` (auto-updated on every command)
+- Coexists with native kiro-cli session management; index self-heals if sessions are deleted externally
+- Embedding model: BAAI/bge-small-zh-v1.5 via fastembed (local, no API key)

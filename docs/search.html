@@ -19,21 +19,26 @@
 
 <div class="hero">
   <h1>🔍 <span>Search</span></h1>
-  <p>Find any conversation instantly. Two modes: fast for speed, smart for semantics.</p>
+  <p>Hybrid search: FTS5 keyword + embedding semantic, merged with Reciprocal Rank Fusion.</p>
 </div>
 
 <div class="section">
-  <h2 class="reveal up">Two Search Modes</h2>
+  <h2 class="reveal up">How It Works</h2>
   <div class="cards reveal up">
     <div class="card" style="border-color:#1f6feb;">
-      <div class="icon">⚡</div>
-      <h3>fast mode <span style="color:#484f58;font-weight:400;">(default)</span></h3>
-      <p>FTS5 full-text search. &lt;50ms. Prefix matching, hyphen normalization, BM25 ranking, context snippets. Zero tokens.</p>
+      <div class="icon">📝</div>
+      <h3>FTS5 Keyword</h3>
+      <p>Full-text search with prefix matching, BM25 ranking. Finds exact terms instantly.</p>
     </div>
     <div class="card" style="border-color:#a371f7;">
       <div class="icon">🧠</div>
-      <h3>smart mode <span style="color:#484f58;font-weight:400;">(--smart)</span></h3>
-      <p>LLM judges relevance from session summaries. Cross-language matching. Returns a one-sentence explanation per result.</p>
+      <h3>Embedding Semantic</h3>
+      <p>bge-small-zh per-turn vectors. Finds conceptually related content even with different wording.</p>
+    </div>
+    <div class="card" style="border-color:#3fb950;">
+      <div class="icon">🔀</div>
+      <h3>RRF Merge</h3>
+      <p>Reciprocal Rank Fusion combines both rankings. Best of both worlds, no tuning needed.</p>
     </div>
   </div>
 </div>
@@ -43,38 +48,60 @@
 
   <div class="tab-group reveal up">
     <div class="tabs">
-      <div class="tab active" data-target="tab-fast">⚡ fast mode</div>
-      <div class="tab" data-target="tab-smart">🧠 smart mode</div>
+      <div class="tab active" data-target="tab-cli">💻 CLI Search</div>
+      <div class="tab" data-target="tab-interactive">🖥️ Interactive (s key)</div>
+      <div class="tab" data-target="tab-semantic">🌐 Cross-language</div>
     </div>
 
-    <div class="tab-content active" id="tab-fast">
+    <div class="tab-content active" id="tab-cli">
       <div class="terminal" data-typing>
-        <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">&lt;50ms, zero tokens</span></div>
+        <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Hybrid search — keyword + semantic</span></div>
         <div class="terminal-body">
 <div class="tl" data-cmd="kiro-session search &quot;docker network&quot;"><span class="prompt">$</span> <span class="cmd"></span></div>
 <div class="tl"></div>
-<div class="tl"><span class="blue"> 1. 612381ac</span>  API Gateway Migration  <span class="dim">(4d ago, 58 prompts, /home/user/docs)</span></div>
+<div class="tl"><span class="blue"> 1. 1ec9859a</span>  Docker开发容器构建与多机部署  <span class="dim">(12h ago, 111 prompts, dev-env)</span></div>
 <div class="tl">    <span class="dim">...configured nginx reverse proxy for</span> <span class="red">docker</span> <span class="dim">containers on bridge</span> <span class="red">network</span><span class="dim">...</span></div>
-<div class="tl"><span class="blue"> 2. 5d32ae37</span>  Debug production logs  <span class="dim">(2d ago, 12 prompts, /home/user/project-x)</span></div>
-<div class="tl">    <span class="dim">...nginx error 502,</span> <span class="red">docker network</span> <span class="dim">inspect showed missing subnet...</span></div>
+<div class="tl"><span class="blue"> 2. b46887fe</span>  可迁移开发环境容器化方案  <span class="dim">(8d ago, 51 prompts, temp)</span></div>
+<div class="tl">    <span class="dim">...当前</span><span class="red">docker</span><span class="dim">file 里面有写针对中国大陆的git地址优化...</span></div>
+<div class="tl"><span class="blue"> 3. 61e9e696</span>  WSLg容器GUI偏移问题排查  <span class="dim">(19h ago, 8 prompts, containerGUI)</span></div>
+<div class="tl">    <span class="dim">...WSLg容器内GUI窗口最大化时偏移...</span></div>
 <div class="tl"></div>
-<div class="tl"><span class="yellow">Tip: kiro-session resume 612381ac to continue a session</span></div>
+<div class="tl"><span class="dim">16 results (FTS5 + embedding, RRF merged)</span></div>
         </div>
       </div>
     </div>
 
-    <div class="tab-content" id="tab-smart">
+    <div class="tab-content" id="tab-interactive">
       <div class="terminal" data-typing>
-        <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Semantic matching, cross-language</span></div>
+        <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Press s in session list → search prompt at bottom</span></div>
         <div class="terminal-body">
-<div class="tl" data-cmd="kiro-session search &quot;容器网络&quot; --smart"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl">Sessions (57/57)  ⏳=pending 🔄=stale ✅=enriched</div>
+<div class="tl">     #  ID        Name                         Used    Topics Turns Dir</div>
+<div class="tl">  🔄  1. 771f40ff  将我的kiro cli 默认模...     2m ago       0   213 kiro-session</div>
+<div class="tl">  ✅  2. 1ec9859a  Docker开发容器构建与多...    12h ago     12   111 dev-env</div>
+<div class="tl">  ✅  3. 64476ff5  Obsidian个人知识管理...      20h ago      6    54 KB</div>
+<div class="tl">  <span class="dim">  ... 54 more</span></div>
 <div class="tl"></div>
-<div class="tl"><span class="blue"> 1. 612381ac</span>  API Gateway Migration  <span class="dim">(4d ago, 58 prompts, /home/user/docs)</span></div>
-<div class="tl">    <span class="dim"><span class="green">Discussed Docker container networking and nginx reverse proxy setup.</span></span></div>
-<div class="tl"><span class="blue"> 2. 5d32ae37</span>  Debug production logs  <span class="dim">(2d ago, 12 prompts, /home/user/project-x)</span></div>
-<div class="tl">    <span class="dim"><span class="green">Debugged nginx 502 errors related to container networking issues.</span></span></div>
+<div class="tl" data-cmd="🔍 Search: 容器部署"><span class="yellow bold">🔍 Search: </span><span class="cmd"></span></div>
 <div class="tl"></div>
-<div class="tl"><span class="yellow">Tip: kiro-session resume 612381ac to continue a session</span></div>
+<div class="tl"><span class="dim">→ Sessions (16/57 search: "容器部署")</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-semantic">
+      <div class="terminal" data-typing>
+        <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Chinese query → finds English content</span></div>
+        <div class="terminal-body">
+<div class="tl" data-cmd="kiro-session search &quot;容器部署&quot;"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl"><span class="blue"> 1. 1ec9859a</span>  Docker开发容器构建与多机部署  <span class="dim">(12h ago, 111 prompts)</span></div>
+<div class="tl">    <span class="dim">...Hybrid Search: FTS5 关键词匹配 + Embedding 语义搜索...</span></div>
+<div class="tl"><span class="blue"> 2. 64476ff5</span>  Obsidian个人知识管理系统搭建  <span class="dim">(20h ago, 54 prompts)</span></div>
+<div class="tl">    <span class="dim">...我想在容器里面使用，你当前就是在容器里面...</span></div>
+<div class="tl"><span class="blue"> 3. b46887fe</span>  可迁移开发环境容器化方案  <span class="dim">(8d ago, 51 prompts)</span></div>
+<div class="tl"></div>
+<div class="tl"><span class="green">✓ "容器部署" matched sessions about Docker, Podman, WSLg containers</span></div>
         </div>
       </div>
     </div>
@@ -82,8 +109,18 @@
 </div>
 
 <div class="section">
+  <h2 class="reveal up">Two Ways to Search</h2>
+  <table class="tbl reveal up">
+    <tr><th>Method</th><th>How</th><th>Best for</th></tr>
+    <tr><td><code>/</code> in list</td><td>Real-time text filter in current list</td><td>Quick narrowing by visible text</td></tr>
+    <tr><td><code>s</code> in list</td><td>Hybrid search (FTS5 + embedding)</td><td>Semantic search, cross-language</td></tr>
+    <tr><td><code>kiro-session search</code></td><td>CLI hybrid search</td><td>Scripting, piping, --json output</td></tr>
+  </table>
+</div>
+
+<div class="section">
   <h2 class="reveal up">Filters</h2>
-  <p class="desc">Combine with either search mode, or use standalone to narrow your session list.</p>
+  <p class="desc">Combine with search to narrow results further.</p>
 
   <table class="tbl reveal up">
     <tr><th>Filter</th><th>What it matches</th><th>Example</th></tr>
@@ -96,37 +133,32 @@
   <div class="terminal reveal up" data-typing>
     <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Combining search + filters</span></div>
     <div class="terminal-body">
+<div class="tl" data-cmd="kiro-session search &quot;PIM&quot; --dir docs"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
+<div class="tl" data-cmd="kiro-session search &quot;error&quot; --cmd docker --recent 7d"><span class="prompt">$</span> <span class="cmd"></span></div>
+<div class="tl"></div>
 <div class="tl" data-cmd="kiro-session list --file Dockerfile --recent 7d"><span class="prompt">$</span> <span class="cmd"></span></div>
-<div class="tl"></div>
-<div class="tl" data-cmd="kiro-session search &quot;error&quot; --cmd docker"><span class="prompt">$</span> <span class="cmd"></span></div>
-<div class="tl"></div>
-<div class="tl" data-cmd="kiro-session search &quot;performance&quot; --dir api --smart"><span class="prompt">$</span> <span class="cmd"></span></div>
     </div>
   </div>
 </div>
 
 <div class="section">
-  <h2 class="reveal up">Tags</h2>
+  <h2 class="reveal up">Embedding Model</h2>
   <div class="cards reveal up">
     <div class="card">
-      <div class="icon">🏷️</div>
-      <h3>Auto Tags</h3>
-      <p>Generated from file types, directory names, commands (Layer 0), and LLM smart tags (Layer 1). No effort needed.</p>
+      <div class="icon">🏠</div>
+      <h3>100% Local</h3>
+      <p>BAAI/bge-small-zh-v1.5 via fastembed. ~90MB model, auto-downloaded on first use. No API key needed.</p>
     </div>
     <div class="card">
-      <div class="icon">✏️</div>
-      <h3>User Tags</h3>
-      <p>Add your own via CLI or the <code>[t]</code> action in session detail. Fully searchable in both modes.</p>
+      <div class="icon">🌏</div>
+      <h3>Bilingual</h3>
+      <p>Chinese + English. Search "容器部署" and find sessions about Docker deployment.</p>
     </div>
-  </div>
-  <div class="terminal reveal up" data-typing style="margin-top:16px;">
-    <div class="terminal-bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="title">Tag management</span></div>
-    <div class="terminal-body">
-<div class="tl" data-cmd="kiro-session tag 612381ac &quot;docker&quot; &quot;production-issue&quot;"><span class="prompt">$</span> <span class="cmd"></span></div>
-<div class="tl"><span class="green">✔ Added tags: docker, production-issue</span></div>
-<div class="tl"></div>
-<div class="tl" data-cmd="kiro-session tag 612381ac --remove &quot;production-issue&quot;"><span class="prompt">$</span> <span class="cmd"></span></div>
-<div class="tl"><span class="green">✔ Removed tag: production-issue</span></div>
+    <div class="card">
+      <div class="icon">⚡</div>
+      <h3>Fast</h3>
+      <p>Per-turn vectors pre-computed during enrichment. Search is just cosine similarity — milliseconds.</p>
     </div>
   </div>
 </div>

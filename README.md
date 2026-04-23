@@ -10,7 +10,7 @@ Kiro CLI's built-in session management shows only session IDs and one-line summa
 
 kiro-session solves this with:
 - **Cross-directory browsing** — see all sessions from all projects in one place
-- **Full-text search** — find sessions by any keyword in the conversation
+- **Hybrid search** — keyword (FTS5) + semantic (embedding) search with RRF ranking
 - **Topic splitting** — LLM groups turns by meaning, resume just the topic you need
 - **Private sessions** — incognito mode that auto-deletes local data on exit
 - **Dual storage support** — reads both SQLite (v1) and JSON/JSONL (v2) kiro-cli sessions
@@ -22,7 +22,7 @@ git clone <repo> && cd kiro-session
 ./install.sh
 ```
 
-The installer creates a Python venv, installs dependencies (`simple-term-menu`, `orjson`, `pyyaml`, `jieba`), and symlinks `kiro-session` to `~/.local/bin/`.
+The installer creates a Python venv, installs dependencies (`simple-term-menu`, `orjson`, `pyyaml`, `jieba`, `fastembed`, `numpy`, `prompt_toolkit`), and symlinks `kiro-session` to `~/.local/bin/`.
 
 ### Requirements
 
@@ -34,7 +34,7 @@ The installer creates a Python venv, installs dependencies (`simple-term-menu`, 
 ```bash
 kiro-session                          # interactive browser (default)
 kiro-session list --plain             # non-interactive list
-kiro-session search "docker"          # full-text search
+kiro-session search "docker"          # hybrid search (keyword + semantic)
 kiro-session list --dir temp          # filter by directory
 kiro-session list --recent 7d         # filter by recency
 kiro-session list --file "main.py"    # filter by file touched
@@ -47,13 +47,17 @@ kiro-session private                  # start a private session
 |---------|-------------|
 | `kiro-session` | Interactive session browser |
 | `kiro-session list [options]` | List/filter sessions |
-| `kiro-session search <query>` | Full-text search across all sessions |
-| `kiro-session index [--rebuild]` | Build/refresh LLM index |
+| `kiro-session search <query>` | Hybrid search (keyword + semantic) across all sessions |
+| `kiro-session enrich [--rebuild]` | Build/refresh LLM index (alias: `index`) |
 | `kiro-session save <id> [path]` | Export session to JSON |
 | `kiro-session restore <path>` | Import session from JSON |
+| `kiro-session export <id> [--dir path]` | Export session to Markdown |
 | `kiro-session resume <id> [--topic N]` | Resume session (or topic) directly |
 | `kiro-session delete <id>` | Delete session from kiro DB |
+| `kiro-session delete-topic <id> --topic N` | Delete a specific topic |
 | `kiro-session tag <id> [tags]` | Add/remove user tags |
+| `kiro-session rename <id> "name"` | Rename session |
+| `kiro-session context <id> [--topic N]` | Generate context summary for cross-session reference |
 | `kiro-session cleanup` | Review cleanup suggestions |
 | `kiro-session redact <id> --turn N` | Remove a turn from index |
 | `kiro-session config [key] [value]` | View/set configuration |
@@ -78,9 +82,10 @@ kiro-session private                  # start a private session
 | `↑` / `↓` | Move selection |
 | `Page Up` / `Page Down` | Scroll by page |
 | `Ctrl-A` / `Ctrl-E` | Jump to top / bottom |
-| `/` | Search / filter |
+| `/` | Quick text filter (in current list) |
+| `s` | Semantic search (hybrid: keyword + embedding) |
 | `Enter` | Select |
-| `Esc` / `q` | Back / quit |
+| `Esc` / `q` | Back / quit (clears search if active) |
 
 ## Session Detail & Actions
 
@@ -104,19 +109,19 @@ Topics (3):
   [r] Resume full session
   [1-3] Resume by topic
   [t] Edit tags
+  [n] Rename
   [v] Save    [d] Delete
-  [x] Delete topic
   [f] Feedback (re-analyze topics)
-  [i] Index
-  [b] Back    [q] Quit
+  [e] Enrich
+  [Esc] Back    [q] Quit
 ```
 
 - **Resume full** — uses kiro-cli's native `--resume-picker` to resume the original session in-place (TUI supported)
 - **Resume by topic** — cherry-picks turns for that topic, writes to kiro DB, then resumes via `--resume-picker`
 - **Feedback** — provide feedback on topic grouping, LLM re-analyzes with your guidance
-- **Index** — runs LLM enrichment for better names, topics, and tags (~5s)
-- Sessions without LLM index are marked ⚡ in the list
-- Sessions with stale index (new content since last enrich) are marked ~ and can be re-indexed manually
+- **Enrich** — runs LLM enrichment for better names, topics, and tags (~5s)
+- Sessions without LLM index are marked ⏳ in the list
+- Sessions with stale index (new content since last enrich) are marked 🔄 and can be re-indexed manually
 
 ## Private Sessions
 
@@ -153,7 +158,9 @@ kiro-session redact abc12345 --turn 3
 ```
 Layer 0: Extractor (read-only scan of kiro DB + JSONL files)
 Layer 1: LLM Enrichment (names, topics, tags via kiro-cli headless)
-Layer 2: UI (simple-term-menu interactive browser + CLI output)
+Layer 1b: Embeddings (bge-small-zh per-turn vectors for semantic search)
+Layer 2: Search (FTS5 keyword + embedding semantic, RRF merge)
+Layer 3: UI (simple-term-menu interactive browser + CLI output)
 ```
 
 ### Dual Storage
