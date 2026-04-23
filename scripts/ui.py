@@ -277,10 +277,13 @@ def show_detail(conn, session: dict):
     actions.append("rename")
     entries.append("[v] Save session")
     actions.append("save")
-    if s.get("llm_enriched", 0) != 1:
-        label = "[i] Re-index (LLM enrich)" if s.get("llm_enriched") == 2 else "[i] Index (LLM enrich)"
-        entries.append(label)
-        actions.append("index")
+    if s.get("llm_enriched", 0) == 0:
+        entries.append("[i] Index (LLM enrich)")
+    elif s.get("llm_enriched") == 2:
+        entries.append("[i] Re-index (stale)")
+    else:
+        entries.append("[i] Re-index (force)")
+    actions.append("index")
     if topics:
         entries.append("[f] Feedback (re-analyze topics)")
         actions.append("feedback")
@@ -328,6 +331,11 @@ def show_detail(conn, session: dict):
     elif action == "save":
         _action_save(conn, s)
     elif action == "index":
+        if s.get("llm_enriched") == 1:
+            ans = input("Session already indexed. Re-index? [y/N] ").strip().lower()
+            if ans != "y":
+                show_detail(conn, session)
+                return
         _action_index(conn, sid)
         show_detail(conn, session)
     elif action == "feedback":
