@@ -43,8 +43,8 @@ def format_session_line(s: dict, conn=None) -> str:
         topics = idx.get_topics(conn, s["id"])
 
     info_parts = [age]
-    info_parts.append(f"{len(topics)} topics")
     info_parts.append(f"{turns} prompts")
+    info_parts.append(f"{len(topics)} topics")
     info_parts.append(directory)
 
     icon = "⏳" if enriched == 0 else ("🔄" if enriched == 2 else "✅")
@@ -66,8 +66,8 @@ def format_session_line_plain(s: dict, conn=None) -> str:
         topics = idx.get_topics(conn, s["id"])
 
     info_parts = [age]
-    info_parts.append(f"{len(topics)} topics")
     info_parts.append(f"{turns} prompts")
+    info_parts.append(f"{len(topics)} topics")
     info_parts.append(directory)
 
     prefix = "⏳" if enriched == 0 else ("🔄" if enriched == 2 else "✅")
@@ -92,7 +92,7 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
     except OSError:
         cols = 74
 
-    # Fixed columns: icon(3) idx(4) hash(9) age(8) topics(3) turns(5) dir(14)
+    # Fixed columns: icon(3) idx(4) hash(9) age(8) turns(5) topics(6) dir(14)
     # Name gets the rest, capped at 40
     fixed = 3 + 4 + 10 + 9 + 7 + 6 + 14
     name_w = min(40, max(15, cols - fixed))
@@ -118,7 +118,7 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
             enriched = s.get("llm_enriched", 0)
             topics = idx.get_topics(conn, s["id"])
             icon = "⏳" if enriched == 0 else ("🔄" if enriched == 2 else "✅")
-            line = f"{icon} {i+1:>2}. {sid}  {name} {age:<8}{len(topics):>6} {turns:>5} {d}"
+            line = f"{icon} {i+1:>2}. {sid}  {name} {age:<8}{turns:>5} {len(topics):>6} {d}"
             entries.append(line)
         return entries
 
@@ -139,8 +139,8 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
         total = len(all_sessions)
         shown = len(current_sessions)
         filter_info = f" search: \"{search_query}\"" if search_query else ""
-        # Header: col0=icon(3), col3=idx(4), col7=hash(10), col17=name(name_w+1), col=age(8), topics(7), turns(6), dir
-        header = f"     {'#':>2}  {'ID':<8}  {'Name':<{name_w}} {'Used':<8}{'Topics':>6} {'Turns':>5} Dir"
+        # Header: col0=icon(3), col3=idx(4), col7=hash(10), col17=name(name_w+1), col=age(8), turns(5), topics(7), dir
+        header = f"     {'#':>2}  {'ID':<8}  {'Name':<{name_w}} {'Used':<8}{'Turns':>5} {'Topics':>6} Dir"
         title = f"Sessions ({shown}/{total}{filter_info})  ⏳=pending 🔄=stale ✅=enriched\n{header}"
         status = "Enter: select | /: filter | s: semantic search | q: quit"
 
