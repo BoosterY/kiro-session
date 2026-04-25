@@ -139,9 +139,10 @@ def session_picker(conn, sessions: list[dict]) -> dict | None:
         total = len(all_sessions)
         shown = len(current_sessions)
         filter_info = f" search: \"{search_query}\"" if search_query else ""
-        # Header: col0=icon(3), col3=idx(4), col7=hash(10), col17=name(name_w+1), col=age(8), turns(5), topics(7), dir
+        empty_count = sum(1 for s in all_sessions if s.get("user_turn_count", 0) == 0)
+        cleanup_hint = f"  ⚠ {empty_count} empty (cleanup)" if empty_count >= 5 else ""
         header = f"     {'#':>2}  {'ID':<8}  {'Name':<{name_w}} {'Used':<8}{'Turns':>5} {'Topics':>6} Dir"
-        title = f"Sessions ({shown}/{total}{filter_info})  ⏳=pending 🔄=stale ✅=enriched\n{header}"
+        title = f"Sessions ({shown}/{total}{filter_info})  ⏳=pending 🔄=stale ✅=enriched{cleanup_hint}\n{header}"
         status = "Enter: select | /: filter | s: semantic search | q: quit"
 
         menu = TerminalMenu(
