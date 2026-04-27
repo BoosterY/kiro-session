@@ -104,6 +104,34 @@ def _touch_session_in_db(cwd: str, session_id: str):
             pass
 
 
+def _move_session_directory(session_id: str, old_cwd: str, new_cwd: str):
+    """Update session directory in kiro DB (v1 + v2)."""
+    # v1: SQLite key
+    db_path = Path.home() / ".local/share/kiro-cli/data.sqlite3"
+    if db_path.exists():
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute(
+                "UPDATE conversations_v2 SET key = ? WHERE key = ? AND conversation_id = ?",
+                (new_cwd, old_cwd, session_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    # v2: JSON meta cwd
+    meta_path = Path.home() / ".kiro/sessions/cli" / f"{session_id}.json"
+    if meta_path.exists():
+        try:
+            with open(meta_path) as f:
+                meta = json.load(f)
+            meta["cwd"] = new_cwd
+            with open(meta_path, "w") as f:
+                json.dump(meta, f, ensure_ascii=False)
+        except Exception:
+            pass
+
+
 def launch_kiro_resume(cwd: str, session_id: str, trust_tools: str = "",
                        ui_mode: str = "", touched: bool = False):
     """Launch kiro-cli --resume-picker, auto-select the target session."""
@@ -119,6 +147,18 @@ def launch_kiro_resume(cwd: str, session_id: str, trust_tools: str = "",
         cmd.append("--legacy-ui")
     if trust_tools:
         cmd.append(f"--trust-tools={trust_tools}")
+
+    if not os.path.isdir(cwd):
+        try:
+            ans = input(f"⚠ Directory not found: {cwd}\nResume in current directory instead? [y/N] ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            return False
+        if ans != "y":
+            return False
+        new_cwd = os.getcwd()
+        _move_session_directory(session_id, cwd, new_cwd)
+        cwd = new_cwd
+        touched = False  # recalculate picker index for new directory
 
     pid, master_fd = pty.fork()
     if pid == 0:
